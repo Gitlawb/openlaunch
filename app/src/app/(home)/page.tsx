@@ -26,13 +26,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
 
   return (
     <>
-      <div className="bb-sky" aria-hidden />
       <main className="relative mx-auto max-w-6xl px-4 pb-16 space-y-8">
         <LaunchHero configured={LAUNCHPAD_CONFIGURED} />
         <TrendingStrip initial={trending} />
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem] gap-6 items-start">
+        <div className="grid xl:grid-cols-[minmax(0,1fr)_18rem] gap-6 items-start">
           <LaunchList initial={page.items} initialHasMore={page.hasMore} initialSort={sort} initialWindow={window} initialChain={chain} initialFilter={filter} hasDb={dbConfigured()} />
-          <div className="lg:sticky lg:top-20 min-w-0 space-y-4">
+          <div className="xl:sticky xl:top-32 min-w-0 grid sm:grid-cols-2 xl:block gap-4 xl:space-y-4">
             <PostsFeed initial={posts} compact />
             <LaunchTape initial={feed} />
             <div className="rounded-2xl bg-card border border-line shadow-card p-4 text-[13px] leading-relaxed text-body">

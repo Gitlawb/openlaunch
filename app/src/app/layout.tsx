@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Space_Mono, Unbounded } from "next/font/google";
+import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Web3Provider from "@/components/Web3Provider";
 import Header from "@/components/Header";
@@ -14,9 +14,7 @@ import Mark from "@/components/launchpad/Mark";
 import RouteProgress from "@/components/RouteProgress";
 import { Suspense } from "react";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const spaceMono = Space_Mono({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-space-mono", display: "swap" });
-const unbounded = Unbounded({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-unbounded", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
 const TITLE = SITE_TITLE;
 const DESCRIPTION = SITE_DESCRIPTION;
@@ -31,7 +29,10 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", site: `@${BRAND_X}`, title: TITLE, description: SOCIAL_DESCRIPTION },
 };
 
-export const viewport: Viewport = { themeColor: "#FAFAF8", colorScheme: "light", width: "device-width", initialScale: 1, viewportFit: "cover" };
+export const viewport: Viewport = {
+  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#ffffff" }, { media: "(prefers-color-scheme: dark)", color: "#000000" }],
+  colorScheme: "light dark", width: "device-width", initialScale: 1, viewportFit: "cover",
+};
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const usd = await ethUsd();
@@ -39,8 +40,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const b = launchpad("base");
   const r = launchpad("robinhood");
   return (
-    <html lang="en" className={`${inter.variable} ${spaceMono.variable} ${unbounded.variable}`}>
+    <html lang="en" className={geistMono.variable}>
       <body className="min-h-screen flex flex-col">
+        <a href="#main-content" className="bb-skip-link">Skip to content</a>
         <Web3Provider>
           <LiveProvider initial={{ at: 0, feed, totals, ethUsd: usd }}>
           <Suspense fallback={null}>
@@ -48,8 +50,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </Suspense>
           <Header />
           <TxToasts />
-          <div className="flex-1 min-w-0">{children}</div>
-          <footer className="bb-footer mx-auto w-full max-w-6xl px-4 py-10 text-xs text-muted flex flex-wrap items-center gap-x-5 gap-y-2">
+          <div id="main-content" tabIndex={-1} className="flex-1 min-w-0">{children}</div>
+          <footer className="bb-footer mx-auto w-full max-w-6xl px-4 py-8 text-xs text-muted flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-line">
             <span className="font-semibold text-ink inline-flex items-center gap-1.5">
               <Mark size={16} />
               {BRAND}<span className="text-brand">{BRAND_TLD}</span>
@@ -79,7 +81,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               @{BRAND_X}
             </a>
             <a href="https://gitlawb.com" className="hover:text-ink" target="_blank" rel="noreferrer">
-              a gitlawb thing
+              Built by Gitlawb
             </a>
           </footer>
           </LiveProvider>

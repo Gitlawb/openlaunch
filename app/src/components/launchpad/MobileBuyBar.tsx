@@ -22,7 +22,7 @@ export default function MobileBuyBar({ symbol, mcap }: { symbol: string; mcap: s
           <div className="text-xs text-muted">{symbol} · market cap</div>
           <div className="font-mono font-bold text-ink tnum">{mcap}</div>
         </div>
-        <a href="#trade" onClick={(e) => { e.preventDefault(); document.getElementById("trade")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="inline-flex items-center justify-center min-h-11 px-6 rounded-xl bg-up text-white text-sm font-semibold">
+        <a href="#trade" onClick={(e) => { e.preventDefault(); document.getElementById("trade")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} className="inline-flex items-center justify-center min-h-11 px-6 rounded-xl bg-up text-status-fg text-sm font-semibold">
           Buy {symbol}
         </a>
       </div>

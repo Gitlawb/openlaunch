@@ -49,7 +49,7 @@ export default function ConnectButton({ block = false }: { block?: boolean }) {
     );
   }
   return (
-    <button onClick={() => disconnect()} title={`Disconnect (on ${CHAIN_SHORT[key]})`} className={`${base} bg-brand-soft text-brand hover:bg-brand hover:text-white font-mono tnum`}>
+    <button onClick={() => disconnect()} title={`Disconnect (on ${CHAIN_SHORT[key]})`} className={`${base} bg-brand-soft text-brand hover:bg-brand hover:text-brand-fg font-mono tnum`}>
       <span className="inline-block h-2 w-2 rounded-full bg-up" aria-hidden />
       {shortAddr(address)}
       <span className="font-sans text-[10px] font-semibold uppercase tracking-wide opacity-70">{CHAIN_SHORT[key]}</span>

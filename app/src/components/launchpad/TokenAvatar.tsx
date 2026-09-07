@@ -9,10 +9,9 @@ export function hueOf(addr: string): number {
   return h;
 }
 
-/** Token image with a graceful fallback: a soft gradient tile with the first letter of the symbol. */
-export default function TokenAvatar({ token, symbol, image, size = 40, className = "" }: { token: string; symbol: string; image?: string | null; size?: number; className?: string }) {
+/** Keep token artwork; missing images use a neutral initial tile. */
+export default function TokenAvatar({ symbol, image, size = 40, className = "" }: { token: string; symbol: string; image?: string | null; size?: number; className?: string }) {
   const [broken, setBroken] = useState(false);
-  const h = hueOf(token);
   const style = { width: size, height: size, fontSize: Math.max(11, Math.round(size * 0.42)) };
   if (image && !broken) {
     return (
@@ -32,8 +31,8 @@ export default function TokenAvatar({ token, symbol, image, size = 40, className
   return (
     <div
       aria-hidden
-      className={`shrink-0 rounded-xl grid place-items-center font-display font-bold text-white select-none ${className}`}
-      style={{ ...style, background: `linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 40) % 360} 75% 45%))` }}
+      className={`shrink-0 rounded-xl grid place-items-center font-display font-medium bg-brand-soft text-ink border border-line select-none ${className}`}
+      style={style}
     >
       {symbol.slice(0, 1).toUpperCase()}
     </div>

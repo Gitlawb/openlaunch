@@ -13,8 +13,8 @@ import { Sk } from "@/components/Skeleton";
 type Payload = { interval: Interval; from: number; launch: { t: number; price: number }; quote: { symbol: string; decimals: number; usd: number | null }; supply: number; candles: RawCandle[]; mine: { t: number; is_buy: boolean; quote: string }[] | null };
 type Unit = "usd" | "quote" | "mcap";
 
-const UP = "#15803D";
-const DOWN = "#DC2626";
+const UP = "#21864a";
+const DOWN = "#dc454e";
 
 /**
  * Candles + volume from the indexed swaps. Units: USD (default when the quote
@@ -92,22 +92,36 @@ export default function PriceChart({ chain, token, symbol, launchedAt }: { chain
     if (!el) return;
     const c = createChart(el, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: "#64748B", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11 },
-      grid: { vertLines: { color: "#F1F0EE" }, horzLines: { color: "#F1F0EE" } },
-      rightPriceScale: { borderColor: "#E7E5E4", scaleMargins: { top: 0.08, bottom: 0.25 } },
-      timeScale: { borderColor: "#E7E5E4", timeVisible: true, secondsVisible: false, rightOffset: 3 },
-      crosshair: { horzLine: { labelBackgroundColor: "#0F172A" }, vertLine: { labelBackgroundColor: "#0F172A" } },
+      layout: { background: { color: "transparent" }, fontFamily: getComputedStyle(el).fontFamily, fontSize: 11 },
+      rightPriceScale: { scaleMargins: { top: 0.08, bottom: 0.25 } },
+      timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 3 },
+      crosshair: { horzLine: { labelBackgroundColor: "#454545" }, vertLine: { labelBackgroundColor: "#454545" } },
       handleScale: { axisPressedMouseMove: true },
       localization: { priceFormatter: (p: number) => (p >= 1000 ? fmtCompact(p, 1) : p >= 1 ? p.toFixed(2) : fmtPrice(p)) },
     });
     const cs = c.addSeries(CandlestickSeries, { upColor: UP, downColor: DOWN, borderUpColor: UP, borderDownColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, priceFormat: { type: "price", precision: 8, minMove: 1e-8 } });
-    const vs = c.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", color: "#CBD5E1" });
+    const vs = c.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", color: "#888888" });
+    const theme = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncTheme = () => {
+      const styles = getComputedStyle(el);
+      const color = (name: string) => styles.getPropertyValue(`--color-${name}`).trim();
+      c.applyOptions({
+        layout: { textColor: color("muted") },
+        grid: { vertLines: { color: color("line-muted") }, horzLines: { color: color("line-muted") } },
+        rightPriceScale: { borderColor: color("line") },
+        timeScale: { borderColor: color("line") },
+      });
+      cs.applyOptions({ upColor: color("up"), borderUpColor: color("up"), wickUpColor: color("up"), downColor: color("down"), borderDownColor: color("down"), wickDownColor: color("down") });
+    };
+    syncTheme();
+    theme.addEventListener("change", syncTheme);
     c.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     chart.current = c;
     candleSeries.current = cs;
     volSeries.current = vs;
     markers.current = createSeriesMarkers(cs, []);
     return () => {
+      theme.removeEventListener("change", syncTheme);
       c.remove();
       chart.current = null;
       candleSeries.current = null;
@@ -153,7 +167,7 @@ export default function PriceChart({ chain, token, symbol, launchedAt }: { chain
         <div className="flex items-center gap-1.5 flex-wrap">
           <div className="flex items-center rounded-full border border-line bg-paper p-0.5" role="group" aria-label="interval">
             {INTERVAL_KEYS.map((k) => (
-              <button key={k} type="button" onClick={() => setInterval_(k)} className={`h-7 px-2 rounded-full text-[11px] font-mono font-medium ${k === interval ? "bg-ink text-white" : "text-muted hover:text-ink"}`} aria-pressed={k === interval}>
+              <button key={k} type="button" onClick={() => setInterval_(k)} className={`h-7 px-2 rounded-full text-[11px] font-mono font-medium ${k === interval ? "bg-ink text-brand-fg" : "text-muted hover:text-ink"}`} aria-pressed={k === interval}>
                 {k}
               </button>
             ))}

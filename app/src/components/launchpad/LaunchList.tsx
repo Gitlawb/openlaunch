@@ -265,20 +265,20 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
   const ranked = sort !== "new";
 
   return (
-    <section className="min-w-0 space-y-2">
+    <section className="bb-directory min-w-0 space-y-3">
       <div className="space-y-2 pb-1">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
           <h2 className="text-base font-semibold text-ink shrink-0">
             Launches
             <span className="ml-2 text-xs font-normal text-muted font-mono tnum">{live.totals.launches}</span>
           </h2>
-          <label className="relative flex-1 min-w-0 max-w-sm ml-auto">
+          <label className="relative flex-1 min-w-48 max-w-sm ml-auto">
             <span className="sr-only">Search launches</span>
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search name, symbol or 0x…"
-              className="w-full h-9 rounded-full border border-line bg-card pl-8 pr-8 text-[13px] text-ink placeholder:text-faint focus:border-brand focus:ring-4 focus:ring-brand/10 outline-none"
+              className="w-full h-11 rounded-xl border border-line bg-card pl-8 pr-8 text-xs text-ink placeholder:text-faint focus:border-brand focus:ring-4 focus:ring-brand/10 outline-none"
               autoComplete="off"
               spellCheck={false}
             />
@@ -296,7 +296,7 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center rounded-full border border-line bg-card p-0.5 shrink-0" role="group" aria-label="chain">
             {CHAIN_FILTERS.map((c) => (
-              <button key={c.label} type="button" onClick={() => pick(sort, window_, c.key)} className={`h-8 sm:h-7 px-2.5 rounded-full text-[11px] font-medium whitespace-nowrap ${c.key === chain ? (c.key === "robinhood" ? "bg-up-soft text-up" : c.key === "base" ? "bg-brand-soft text-brand" : "bg-ink text-white") : "text-muted hover:text-ink"}`} aria-pressed={c.key === chain}>
+              <button key={c.label} type="button" onClick={() => pick(sort, window_, c.key)} className={`h-8 sm:h-7 px-2.5 rounded-full text-[11px] font-medium whitespace-nowrap ${c.key === chain ? (c.key === "robinhood" ? "bg-up-soft text-up" : c.key === "base" ? "bg-brand-soft text-brand" : "bg-ink text-brand-fg") : "text-muted hover:text-ink"}`} aria-pressed={c.key === chain}>
                 {c.label}
               </button>
             ))}
@@ -312,7 +312,7 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
           ) : null}
           <nav className="flex items-center gap-1 rounded-full border border-line bg-card p-0.5 max-w-full overflow-x-auto bb-scroll ml-auto" aria-label="sort">
             {SORTS.map((s) => (
-              <button key={s.key} type="button" onClick={() => pick(s.key)} className={`h-8 sm:h-7 px-3 inline-flex items-center rounded-full text-xs font-medium whitespace-nowrap ${s.key === sort ? "bg-ink text-white" : "text-body hover:text-ink"}`} aria-pressed={s.key === sort}>
+              <button key={s.key} type="button" onClick={() => pick(s.key)} className={`h-8 sm:h-7 px-3 inline-flex items-center rounded-full text-xs font-medium whitespace-nowrap ${s.key === sort ? "bg-ink text-brand-fg" : "text-body hover:text-ink"}`} aria-pressed={s.key === sort}>
                 {s.label}
               </button>
             ))}
@@ -321,30 +321,32 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
       </div>
       <div className="flex items-center gap-1.5 flex-wrap pb-1">
         {FILTERS.map((f) => (
-          <button key={f.key} type="button" title={f.title} onClick={() => pick(sort, window_, chain, filter === f.key ? null : f.key)} className={`h-7 px-2.5 rounded-full border text-[11px] font-medium whitespace-nowrap ${filter === f.key ? "bg-ink text-white border-ink" : "bg-card text-body border-line hover:border-line-strong hover:text-ink"}`} aria-pressed={filter === f.key}>
+          <button key={f.key} type="button" title={f.title} onClick={() => pick(sort, window_, chain, filter === f.key ? null : f.key)} className={`h-7 px-2.5 rounded-full border text-[11px] font-medium whitespace-nowrap ${filter === f.key ? "bg-ink text-brand-fg border-ink" : "bg-card text-body border-line hover:border-line-strong hover:text-ink"}`} aria-pressed={filter === f.key}>
             {f.label}
           </button>
         ))}
         {nq ? <span className="text-[11px] text-muted ml-1 inline-flex items-center gap-1">{searching && nq ? <><Spinner size={10} /> searching…</> : `${shown.length} match${shown.length === 1 ? "" : "es"}`}</span> : null}
       </div>
-      <LaunchListHeader window={showWindow ? window_ : "all"} />
-      <ul ref={listRef} className="space-y-2">
-        {shown.map((l, i) => (
-          <li key={l.token} data-token={l.token} className="list-none">
-            <ul>
-              <LaunchRow l={l} rank={ranked && !nq ? i + 1 : undefined} window={showWindow ? window_ : "all"} hl={hl.get(l.token) ?? null} now={now} pop={pop.has(l.token)} />
-            </ul>
-          </li>
-        ))}
-        {shown.length === 0 ? (
-          <li className="rounded-2xl bg-card border border-line p-10 text-center space-y-3">
-            <p className="text-sm text-muted">{nq ? (searching ? "Searching…" : "Nothing matches.") : filter ? "Nothing matches this filter yet." : hasDb ? "No launches yet. Yours would be the first." : "Database not configured — the list is empty until it is."}</p>
-            <Link href="/launch" className={btn.primarySm}>
-              Launch the first token
-            </Link>
-          </li>
-        ) : null}
-      </ul>
+      <div className="bb-launch-table">
+        <LaunchListHeader window={showWindow ? window_ : "all"} />
+        <ul ref={listRef}>
+          {shown.map((l, i) => (
+            <li key={l.token} data-token={l.token} className="list-none">
+              <ul>
+                <LaunchRow l={l} rank={ranked && !nq ? i + 1 : undefined} window={showWindow ? window_ : "all"} hl={hl.get(l.token) ?? null} now={now} pop={pop.has(l.token)} />
+              </ul>
+            </li>
+          ))}
+          {shown.length === 0 ? (
+            <li className="rounded-2xl bg-card border border-line p-10 text-center space-y-3">
+              <p className="text-sm text-muted">{nq ? (searching ? "Searching…" : "Nothing matches.") : filter ? "Nothing matches this filter yet." : hasDb ? "No launches yet. Yours would be the first." : "Database not configured — the list is empty until it is."}</p>
+              <Link href="/launch" className={btn.primarySm}>
+                Launch the first token
+              </Link>
+            </li>
+          ) : null}
+        </ul>
+      </div>
       {!nq && hasMore && rows.length < 200 ? (
         <div className="pt-3 flex justify-center">
           <button type="button" onClick={() => void loadMore()} disabled={loadingMore} className={btn.secondarySm}>

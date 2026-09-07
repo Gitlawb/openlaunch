@@ -11,7 +11,7 @@ export function Sk({ className = "", style }: { className?: string; style?: Reac
 export function SkRow({ i }: { i: number }) {
   return (
     <li className="px-3 sm:px-4 py-3 border-t border-line first:border-t-0">
-      <div className="grid md:grid-cols-[minmax(0,1fr)_7rem_6rem_6rem_4rem] items-center gap-3">
+      <div className="bb-launch-columns grid items-center gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <Sk className="h-10 w-10 rounded-xl shrink-0" />
           <div className="min-w-0 space-y-2">

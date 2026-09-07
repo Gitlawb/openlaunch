@@ -172,7 +172,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   const inUsd = amountIn !== null && side === "buy" && quoteUsd ? fmtUsd(units(amountIn, quote.decimals) * quoteUsd) : null;
 
   return (
-    <section className="rounded-2xl bg-card border border-line shadow-card p-4 space-y-4 scroll-mt-20" id="trade">
+    <section className="rounded-2xl bg-card border border-line shadow-card p-4 space-y-4" id="trade">
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-paper p-1 border border-line">
         {(["buy", "sell"] as Side[]).map((s) => (
           <button
@@ -184,7 +184,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
               setQuote(null);
               setPhase({ k: "idle" });
             }}
-            className={`h-10 rounded-lg text-sm font-semibold capitalize transition-colors ${side === s ? (s === "buy" ? "bg-up text-white" : "bg-down text-white") : "text-body hover:text-ink"}`}
+            className={`h-10 rounded-lg text-sm font-semibold capitalize transition-colors ${side === s ? (s === "buy" ? "bg-up text-status-fg" : "bg-down text-status-fg") : "text-body hover:text-ink"}`}
             aria-pressed={side === s}
           >
             {s}

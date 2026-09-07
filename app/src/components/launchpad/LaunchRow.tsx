@@ -11,7 +11,7 @@ import ChangeChip from "./ChangeChip";
 
 export function LaunchListHeader({ window }: { window: VolumeWindow }) {
   return (
-    <div className="hidden md:grid grid-cols-[minmax(0,1fr)_7rem_7rem_6rem_4.5rem] gap-3 px-4 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+    <div className="bb-launch-columns bb-list-heading hidden md:grid gap-3 px-4 py-3 text-[11px] font-medium text-muted">
       <span>Token</span>
       <span className="text-right">Market cap</span>
       <span className="text-right">Volume{window === "all" ? "" : ` ${window}`}</span>
@@ -36,9 +36,9 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
   const hot = l.trades_1h >= 3;
   const flash = hl ? (hl.kind === "new" ? "bb-row-new" : hl.kind === "buy" ? "bb-row-buy" : "bb-row-sell") : "";
   return (
-    <li className={`relative group rounded-2xl bg-card border border-line shadow-card hover:shadow-card-hover hover:border-line-strong transition-[box-shadow,border-color,transform] hover:-translate-y-px ${flash}`}>
-      <Link href={`/t/${l.chain}/${l.token}`} className="absolute inset-0 rounded-2xl" aria-label={`${l.name} (${l.symbol})`} />
-      <div className="grid md:grid-cols-[minmax(0,1fr)_7rem_7rem_6rem_4.5rem] gap-x-3 gap-y-2 items-center px-4 py-3">
+    <li className={`bb-launch-row relative group bg-card hover:bg-subtle transition-colors ${flash}`}>
+      <Link href={`/t/${l.chain}/${l.token}`} className="absolute inset-0" aria-label={`${l.name} (${l.symbol})`} />
+      <div className="bb-launch-columns grid gap-x-3 gap-y-3 items-center px-4 py-4">
         <div className="flex items-center gap-3 min-w-0">
           {typeof rank === "number" ? <span className="hidden sm:inline w-5 text-right font-mono text-xs text-faint tnum shrink-0">{rank}</span> : null}
           <div className="relative shrink-0">
@@ -50,19 +50,19 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
               </span>
             ) : null}
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="font-semibold text-[15px] text-ink truncate">{l.name}</span>
-              <span className="font-mono text-xs text-muted shrink-0">{l.symbol}</span>
+          <div className="min-w-0 flex-1">
+            <div className="bb-token-identity flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+              <span className="font-semibold text-[13px] text-ink truncate max-w-full">{l.name}</span>
+              <span className="font-mono text-[11px] text-muted truncate max-w-24" title={l.symbol}>{l.symbol}</span>
               <ChangeChip v={l.change_from_launch} className={`shrink-0 ${pop ? "bb-pop" : ""}`} />
               <ChainBadge chain={l.chain} className="shrink-0" />
-              {hl?.kind === "new" ? <span className="shrink-0 inline-flex items-center rounded-md px-1.5 h-5 text-[10px] font-bold uppercase tracking-wide bg-brand text-white">new</span> : null}
+              {hl?.kind === "new" ? <span className="shrink-0 inline-flex items-center rounded-md px-1.5 h-5 text-[10px] font-bold uppercase tracking-wide bg-brand text-brand-fg">new</span> : null}
             </div>
-            <div className="mt-0.5 flex items-center gap-2 min-w-0">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
               <FeeChip lpFee={l.lp_fee} mode={mode} />
               {hot ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-warm/30 bg-warm-soft px-2 h-6 text-[11px] font-medium text-warm-ink whitespace-nowrap" title="trades in the last hour">
-                  🔥 {l.trades_1h} / 1h
+                  {l.trades_1h} / 1h
                 </span>
               ) : null}
               {l.last_trade_at ? <span className="text-[11px] text-muted font-mono whitespace-nowrap hidden sm:inline" suppressHydrationWarning>traded {ago(l.last_trade_at, now)} ago</span> : null}
@@ -70,7 +70,7 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
             </div>
           </div>
         </div>
-        <div className="md:hidden flex items-center justify-between font-mono text-xs tnum text-body pl-[3.25rem]">
+        <div className="md:hidden flex flex-wrap gap-x-3 gap-y-1 items-center justify-between font-mono text-[11px] tnum text-body">
           <span>
             <span className="text-faint">mc </span>
             <span className={`text-ink font-bold ${pop ? "bb-pop inline-block" : ""}`}>{fdvUsd !== null ? fmtUsd(fdvUsd, { compact: true }) : fdvQuoteLabel}</span>

@@ -14,7 +14,7 @@ const TAG_STYLE: Record<string, string> = {
   sniper: "border-warm/40 bg-warm-soft text-warm-ink",
   whale: "border-line-strong bg-card text-ink",
 };
-const NOTE_STYLE = { warn: "border-warm/40 bg-warm-soft text-warm-ink", info: "border-line bg-card text-body", good: "border-[#bbf7d0] bg-[#ECFDF3] text-up" } as const;
+const NOTE_STYLE = { warn: "border-warm/40 bg-warm-soft text-warm-ink", info: "border-line bg-card text-body", good: "border-up/30 bg-up-soft text-up" } as const;
 
 export default function HoldersPanel({ chain, symbol, p }: { chain: ChainKey; symbol: string; p: HolderPanel | null }) {
   if (!p) return null;

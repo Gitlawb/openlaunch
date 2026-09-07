@@ -78,21 +78,21 @@ export default function TrendingStrip({ initial }: { initial: Snap }) {
         <h2 className="font-semibold text-ink">Trending</h2>
         <span className="text-xs text-muted">{windowLabel}</span>
       </div>
-      <ul ref={track} className="flex gap-3 overflow-x-auto bb-scroll snap-x snap-mandatory pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 lg:grid lg:grid-cols-6 lg:overflow-visible">
+      <ul ref={track} className="flex gap-3 overflow-x-auto bb-scroll snap-x snap-mandatory pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 xl:grid xl:grid-cols-5 xl:overflow-visible">
         {items.map((l, i) => {
           const isKing = i === 0 && l.token === king;
           const win = snap.window;
           const trades = win === "1h" ? l.trades_1h : l.trades_24h;
           const vol = win === "1h" ? l.volume_1h_usd : l.volume_24h_usd;
           return (
-            <li key={l.token} data-token={l.token} className={`snap-start shrink-0 w-[15.5rem] sm:w-[16.5rem] lg:w-auto ${isKing ? "lg:col-span-2" : ""} ${fresh.has(l.token) ? "bb-flash-up" : ""}`}>
-              <Link href={`/t/${l.chain}/${l.token}`} className={`block h-full rounded-2xl border bg-card shadow-card p-3.5 transition-colors hover:border-ink/40 ${isKing ? "bb-hot border-warm/50" : "border-line"}`}>
+            <li key={l.token} data-token={l.token} className={`snap-start shrink-0 min-w-0 w-[15.5rem] sm:w-[16.5rem] xl:w-auto ${fresh.has(l.token) ? "bb-flash-up" : ""}`}>
+              <Link href={`/t/${l.chain}/${l.token}`} className={`block h-full rounded-2xl border bg-card p-3.5 transition-colors hover:border-ink/40 ${isKing ? "border-line-strong" : "border-line"}`}>
                 <div className="flex items-center gap-3 min-w-0">
-                  <TokenAvatar token={l.token} symbol={l.symbol} image={l.image_url} size={isKing ? 48 : 40} className={isKing ? "rounded-xl" : "rounded-lg"} />
+                  <TokenAvatar token={l.token} symbol={l.symbol} image={l.image_url} size={32} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                       {isKing ? (
-                        <span className="inline-flex items-center h-5 px-1.5 rounded-full bg-warm-soft text-warm-ink text-[10px] font-bold uppercase tracking-wide whitespace-nowrap">🔥 Hot right now</span>
+                        <span className="text-[10px] text-muted whitespace-nowrap">#1 Trending</span>
                       ) : (
                         <span className="font-mono text-[11px] text-faint">#{i + 1}</span>
                       )}
@@ -100,7 +100,7 @@ export default function TrendingStrip({ initial }: { initial: Snap }) {
                     </div>
                     <div className="mt-0.5 flex items-baseline gap-1.5 min-w-0">
                       <span className={`font-semibold text-ink truncate ${isKing ? "text-base" : "text-sm"}`}>{l.name}</span>
-                      <span className="font-mono text-xs text-muted shrink-0">{l.symbol}</span>
+                      <span className="font-mono text-[10px] text-muted truncate max-w-16">{l.symbol}</span>
                     </div>
                   </div>
                 </div>

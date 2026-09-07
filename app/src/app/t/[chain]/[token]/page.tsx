@@ -228,7 +228,7 @@ export default async function TokenPage({ params }: { params: Promise<{ chain: s
             </section>
           </div>
 
-          <div className="lg:sticky lg:top-20 min-w-0 space-y-4 order-1 lg:order-2">
+          <div className="lg:sticky lg:top-32 min-w-0 space-y-4 order-1 lg:order-2">
             <TradePanel chain={chain} token={l.token as Address} symbol={l.symbol} poolKey={poolKey} quote={quote} ethUsd={usd} />
             <CollectPanel
               chain={chain}

@@ -264,7 +264,7 @@ export default function LaunchForm({ ethUsd, initialChain = "base" }: { ethUsd: 
                       setMcapPick(null);
                       setCustomMcap("");
                     }}
-                    className={`h-8 px-3 rounded-full text-xs font-mono font-bold ${quoteKey === q.key ? "bg-ink text-white" : "text-body hover:text-ink"}`}
+                    className={`h-8 px-3 rounded-full text-xs font-mono font-bold ${quoteKey === q.key ? "bg-ink text-brand-fg" : "text-body hover:text-ink"}`}
                     aria-pressed={quoteKey === q.key}
                   >
                     {q.label}
@@ -394,7 +394,7 @@ export default function LaunchForm({ ethUsd, initialChain = "base" }: { ethUsd: 
                     setMcapPick(v);
                     setCustomMcap("");
                   }}
-                  className={`h-11 px-4 rounded-xl border font-mono text-sm font-bold tnum ${active ? "bg-ink text-white border-ink" : "bg-card text-ink border-line-strong hover:border-ink/40"}`}
+                  className={`h-11 px-4 rounded-xl border font-mono text-sm font-bold tnum ${active ? "bg-ink text-brand-fg border-ink" : "bg-card text-ink border-line-strong hover:border-ink/40"}`}
                 >
                   {quote.key === "stock" ? `$${fmtCompact(v * (quote.usd ?? 0), 0)}` : quote.decimals <= 6 ? `$${fmtCompact(v, 0)}` : `${v} ${quote.symbol}`}
                 </button>
@@ -516,7 +516,7 @@ export default function LaunchForm({ ethUsd, initialChain = "base" }: { ethUsd: 
       </form>
 
       {/* preview */}
-      <aside className="lg:sticky lg:top-20 space-y-4 min-w-0 order-first lg:order-none">
+      <aside className="lg:sticky lg:top-32 space-y-4 min-w-0 order-first lg:order-none">
         <div className={`${card} p-4`}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Preview</p>
           <div className="mt-3 flex items-center gap-3">
