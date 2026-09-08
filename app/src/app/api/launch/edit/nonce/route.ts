@@ -16,7 +16,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
   if (!isChainKey(b.chain) || typeof b.token !== "string" || !isAddress(b.token) || typeof b.wallet !== "string" || !isAddress(b.wallet)) return NextResponse.json({ error: "bad params" }, { status: 400 });
-  if (rateLimited(`nonce:wallet:${b.wallet.toLowerCase()}`, 10)) return NextResponse.json({ error: "slow down" }, { status: 429 });
   const n = await issueNonce(b.chain, b.token, b.wallet);
   if (!n) return NextResponse.json({ error: "not the creator" }, { status: 403 });
   return NextResponse.json(n, { headers: { "cache-control": "no-store" } });

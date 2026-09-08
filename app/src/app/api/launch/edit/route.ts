@@ -15,7 +15,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
   if (!isChainKey(b.chain) || typeof b.token !== "string" || typeof b.wallet !== "string") return NextResponse.json({ error: "bad params" }, { status: 400 });
-  if (rateLimited(`edit:wallet:${b.wallet.toLowerCase()}`, 10)) return NextResponse.json({ error: "slow down" }, { status: 429 });
   const r = await applySignedEdit({ chain: b.chain, token: b.token, wallet: b.wallet, nonce: b.nonce, expiresAt: b.expiresAt, signature: b.signature, fields: (b.fields ?? {}) as Record<string, unknown> });
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
   return NextResponse.json({ ok: true });
