@@ -58,13 +58,14 @@ export function inSniperWindow(launchBlock: bigint | number, swapBlock: bigint |
   return BigInt(swapBlock) >= BigInt(launchBlock) && BigInt(swapBlock) <= BigInt(launchBlock) + BigInt(blocks);
 }
 
-export type SwapLite = { trader: string; is_buy: boolean; block_number: bigint | number; token_amount: bigint };
+/** `trader` is null when the indexer could not read the transaction sender (RPC failure); such swaps carry no wallet facts. */
+export type SwapLite = { trader: string | null; is_buy: boolean; block_number: bigint | number; token_amount: bigint };
 
 /** Sniper summary from a token's swaps: wallets that bought inside the window and how much of supply they took. */
 export function sniperSummary(swaps: SwapLite[], launchBlock: bigint | number, supply: bigint): { wallets: string[]; boughtBps: number } {
   const per = new Map<string, bigint>();
   for (const s of swaps) {
-    if (!s.is_buy || !inSniperWindow(launchBlock, s.block_number)) continue;
+    if (!s.trader || !s.is_buy || !inSniperWindow(launchBlock, s.block_number)) continue;
     const t = s.trader.toLowerCase();
     per.set(t, (per.get(t) ?? 0n) + (s.token_amount < 0n ? -s.token_amount : s.token_amount));
   }
@@ -78,7 +79,7 @@ export function creatorActivity(swaps: SwapLite[], launcher: string): { bought: 
   const l = launcher.toLowerCase();
   let bought = 0n, sold = 0n, sells = 0;
   for (const s of swaps) {
-    if (s.trader.toLowerCase() !== l) continue;
+    if (!s.trader || s.trader.toLowerCase() !== l) continue;
     const amt = s.token_amount < 0n ? -s.token_amount : s.token_amount;
     if (s.is_buy) bought += amt;
     else {

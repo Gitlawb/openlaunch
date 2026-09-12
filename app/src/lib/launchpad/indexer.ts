@@ -61,19 +61,23 @@ async function timeOf(chain: ChainKey, block: bigint): Promise<string> {
   return iso;
 }
 const txFrom = new Map<string, string>();
+/** Transaction sender, lower-cased. Null when the RPC fails twice; the swap is then stored without a trader and `healSwapTraders` retries later. */
 async function fromOf(chain: ChainKey, hash: Hex): Promise<string | null> {
   const k = `${chain}:${hash}`;
   const hit = txFrom.get(k);
   if (hit) return hit;
-  try {
-    const tx = await publicClient(chain).getTransaction({ hash });
-    const f = tx.from.toLowerCase();
-    if (txFrom.size > 5000) txFrom.clear();
-    txFrom.set(k, f);
-    return f;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const tx = await publicClient(chain).getTransaction({ hash });
+      const f = tx.from.toLowerCase();
+      if (txFrom.size > 5000) txFrom.clear();
+      txFrom.set(k, f);
+      return f;
+    } catch {
+      // a busy launch block can rate-limit the node; one more try before giving up
+    }
   }
+  return null;
 }
 
 // ── apply ────────────────────────────────────────────────────────────────────
@@ -399,6 +403,7 @@ export async function pollAll(): Promise<Record<string, LaunchSyncResult>> {
     CONFIGURED_CHAINS.map(async (c) => {
       out[c] = await pollLaunches(c).catch((e): LaunchSyncResult => ({ status: "skipped", reason: errMessage(e) }));
       await healLaunchReads(c).catch((e) => console.warn(`[launch-sync] heal ${c}:`, errMessage(e)));
+      await healSwapTraders(c).catch((e) => console.warn(`[launch-sync] heal traders ${c}:`, errMessage(e)));
       await backfillHolders(c).catch((e) => console.warn(`[launch-sync] holders backfill ${c}:`, errMessage(e)));
     }),
   );
@@ -447,6 +452,30 @@ export async function healLaunchReads(chain: ChainKey): Promise<number> {
     healed++;
   }
   if (healed) console.log(`[launch-sync] healed ${healed} launch row(s) on ${chain}`);
+  return healed;
+}
+
+/**
+ * Self-heal swaps stored without a trader (the sender lookup failed at index time, typically a rate-limited
+ * node during a busy launch block). Those rows carry no wallet facts: the holder panel skips them and the
+ * ranking cannot tell whether they were outside trades. Re-reads a bounded batch of the newest ones per poll.
+ */
+export async function healSwapTraders(chain: ChainKey): Promise<number> {
+  const db = maybeDb();
+  if (!db || skipReason(chain)) return 0;
+  const cid = chainIdOf(chain);
+  const rows = await db<{ tx_hash: string }[]>`
+    SELECT tx_hash FROM bb_launch_swaps
+     WHERE chain_id = ${cid} AND trader IS NULL GROUP BY tx_hash ORDER BY max(block_number) DESC LIMIT 20`;
+  if (rows.length === 0) return 0;
+  let healed = 0;
+  for (const r of rows) {
+    const trader = await fromOf(chain, r.tx_hash as Hex);
+    if (!trader) continue;
+    await db`UPDATE bb_launch_swaps SET trader = ${trader} WHERE chain_id = ${cid} AND tx_hash = ${r.tx_hash} AND trader IS NULL`;
+    healed++;
+  }
+  if (healed) console.log(`[launch-sync] healed traders on ${healed} swap tx(s) on ${chain}`);
   return healed;
 }
 
