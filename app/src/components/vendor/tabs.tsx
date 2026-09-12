@@ -14,7 +14,7 @@ export function TabsList({ className, ...props }: TabsPrimitive.List.Props) {
   return <TabsPrimitive.List className={cn("flex gap-5 overflow-x-auto border-b border-line px-5 bb-scroll", className)} {...props} />;
 }
 export function TabsTab({ className, ...props }: TabsPrimitive.Tab.Props) {
-  return <TabsPrimitive.Tab className={cn("flex min-h-12 shrink-0 cursor-pointer items-center gap-2 border-b-2 border-transparent text-sm font-medium text-muted hover:text-ink data-active:border-ink data-active:text-ink", className)} {...props} />;
+  return <TabsPrimitive.Tab className={cn("flex min-h-12 shrink-0 cursor-pointer items-center gap-2 border-b-2 border-transparent text-sm font-medium text-muted transition-colors hover:text-ink data-active:border-brand data-active:text-ink motion-reduce:transition-none", className)} {...props} />;
 }
 export function TabsPanel({ className, ...props }: TabsPrimitive.Panel.Props) {
   return <TabsPrimitive.Panel className={cn("min-w-0", className)} {...props} />;

@@ -12,18 +12,19 @@ import GitlawbBadge, { isGitlawbQuote } from "./GitlawbBadge";
 import { marketUsd } from "@/lib/launchpad/market-format";
 import { capDisplay } from "@/lib/launchpad/market-cap";
 import type { LiveTier } from "@/lib/launchpad/ranking";
+import WatchButton from "./WatchButton";
 
-const columns = "md:grid-cols-[minmax(0,1fr)_6.5rem_5.5rem_6rem_5rem_2.5rem]";
+const columns = "launch-ledger";
 
 export function LaunchListHeader({ window }: { window: VolumeWindow }) {
   return (
-    <div aria-hidden="true" className={`hidden md:grid ${columns} items-center gap-3 border-y border-line bg-card px-4 py-3 text-[11px] font-medium text-muted`}>
+    <div aria-hidden="true" className={`hidden sm:grid ${columns} items-center gap-3 border-b border-line pl-11 pr-2 py-2 text-[11px] font-medium text-muted`}>
       <span>Token / paired with</span>
       <span className="text-right">Market cap</span>
-      <span className="text-right">Since launch</span>
+      <span className="hidden text-right lg:block">Since launch</span>
       <span className="text-right">Volume · {window}</span>
       <span className="text-right">Buys / sells</span>
-      <span className="text-right">Age</span>
+      <span className="hidden text-right lg:block">Age</span>
     </div>
   );
 }
@@ -46,8 +47,10 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
   const age = <time dateTime={l.block_time} title={new Date(l.block_time).toUTCString()} suppressHydrationWarning>{ago(l.block_time, now)}</time>;
 
   return (
-    <Link href={`/t/${l.chain}/${l.token}`} className={`bb-market-row group block border-b border-line bg-paper px-4 py-3.5 transition-colors hover:bg-card focus-visible:relative focus-visible:z-10 motion-reduce:transition-none ${flash}`} title={l.description || `${l.name} (${l.symbol})`}>
-      <div className={`grid ${columns} grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-3 gap-y-3`}>
+    <div className="relative">
+    <div className="absolute -left-1 top-3 z-10"><WatchButton token={l} /></div>
+    <Link href={`/t/${l.chain}/${l.token}`} className={`bb-market-row group block border-b border-line bg-paper pl-11 pr-2 py-3 transition-colors hover:bg-card focus-visible:relative focus-visible:z-10 motion-reduce:transition-none ${flash}`} title={l.description || `${l.name} (${l.symbol})`}>
+      <div className={`grid ${columns} grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-2.5`}>
         <div className="flex min-w-0 items-center gap-2.5">
           {rank !== undefined ? <span className="hidden w-4 shrink-0 text-right font-mono text-[11px] text-muted tnum xl:block">{rank}</span> : null}
           <TokenAvatar chain={l.chain} token={l.token} symbol={l.symbol} image={l.image_url} size={36} className="shrink-0 rounded-lg" />
@@ -58,26 +61,26 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
               {hl?.kind === "new" ? <span className="shrink-0 text-[10px] font-medium text-brand">New</span> : null}
             </div>
             <div className="mt-0.5 truncate text-[11px] text-muted" title={`${l.symbol} · ${CHAIN_SHORT[l.chain]} · paired with ${l.quote_symbol}`}>
-              <span className="font-mono text-body">{l.symbol}</span><span aria-hidden="true"> · </span>{CHAIN_SHORT[l.chain]}<span aria-hidden="true"> · </span>{l.quote_symbol}
+              <span className="font-mono text-body">{l.symbol}</span><span aria-hidden="true"> · </span>{CHAIN_SHORT[l.chain]}<span aria-hidden="true"> · </span>{l.quote_symbol}<span className="hidden sm:inline lg:hidden"> · {age}</span>
             </div>
             <div className={`mt-0.5 truncate text-[11px] ${mode === "burn" ? "text-warm-ink" : "text-muted"}`}>{feeLabel}</div>
             {chip ? <div className={`mt-0.5 truncate text-[11px] ${chip.tier === "live" ? "text-up" : chip.tier === "new" ? "text-brand" : "text-muted"}`} suppressHydrationWarning>{chip.text}</div> : null}
           </div>
         </div>
         <div className="min-w-0 text-right">
-          <span className="mb-0.5 block text-[10px] text-muted md:sr-only">Market cap</span>
+          <span className="mb-0.5 block text-[10px] text-muted sm:sr-only">Market cap</span>
           <span key={hl?.at ?? "rest"} className={`block truncate font-mono text-sm font-bold text-ink tnum ${pop ? "bb-pop" : ""}`} title={capDetail}>{capLabel}</span>
-          <span className="hidden truncate font-mono text-[10px] text-muted tnum md:block" title={capDetail}>{cap.detail}</span>
-          <span className="mt-0.5 block md:hidden"><span className="block truncate font-mono text-[10px] text-muted tnum" title={capDetail}>{cap.detail}</span><span className="sr-only">Change since launch </span><ChangeChip v={l.change_from_launch} plain /></span>
+          <span className="hidden truncate font-mono text-[10px] text-muted tnum lg:block" title={capDetail}>{cap.detail}</span>
+          <span className="mt-0.5 block lg:hidden"><span className="block truncate font-mono text-[10px] text-muted tnum" title={capDetail}>{cap.detail}</span><span className="sr-only">Change since launch </span><ChangeChip v={l.change_from_launch} plain /></span>
         </div>
-        <div className="hidden min-w-0 text-right md:block"><span className="sr-only">Change since launch </span><ChangeChip v={l.change_from_launch} plain /></div>
-        <div className="hidden min-w-0 text-right font-mono text-xs text-body tnum md:block" title={volumeDetail}><span className="sr-only">Volume {window} </span><span className="block truncate">{volLabel}</span></div>
-        <div className="hidden text-right font-mono text-xs tnum md:block">
+        <div className="hidden min-w-0 text-right lg:block"><span className="sr-only">Change since launch </span><ChangeChip v={l.change_from_launch} plain /></div>
+        <div className="hidden min-w-0 text-right font-mono text-xs text-body tnum sm:block" title={volumeDetail}><span className="sr-only">Volume {window} </span><span className="block truncate">{volLabel}</span></div>
+        <div className="hidden text-right font-mono text-xs tnum sm:block">
           <span className="sr-only">Buys </span><span className="text-up">{l.buys}</span><span className="text-muted"> / </span><span className="sr-only">Sells </span><span className="text-down-ink">{l.sells}</span>
           <div className="mt-0.5 text-[10px] text-muted">{l.holders} holders</div>
         </div>
-        <div className="hidden text-right font-mono text-[11px] text-muted tnum md:block"><span className="sr-only">Launched </span>{age}<span className="sr-only"> ago</span></div>
-        <dl className="col-span-2 grid grid-cols-[1.3fr_1fr_1fr_auto] gap-3 border-t border-line pt-2.5 md:hidden">
+        <div className="hidden text-right font-mono text-[11px] text-muted tnum lg:block"><span className="sr-only">Launched </span>{age}<span className="sr-only"> ago</span></div>
+        <dl className="col-span-2 grid grid-cols-[1.3fr_1fr_1fr_auto] gap-2 pt-1 sm:hidden">
           <div className="min-w-0"><dt className="text-[10px] text-muted">Volume · {window}</dt><dd className="mt-1 truncate font-mono text-[11px] text-body tnum" title={volumeDetail}>{volLabel}</dd></div>
           <div><dt className="text-[10px] text-muted">Buys / sells</dt><dd className="mt-1 font-mono text-[11px] tnum"><span className="text-up">{l.buys}</span><span className="text-muted"> / </span><span className="text-down-ink">{l.sells}</span></dd></div>
           <div><dt className="text-[10px] text-muted">Holders</dt><dd className="mt-1 font-mono text-[11px] text-body tnum">{l.holders}</dd></div>
@@ -85,5 +88,6 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
         </dl>
       </div>
     </Link>
+    </div>
   );
 }

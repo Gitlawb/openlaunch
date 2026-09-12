@@ -9,7 +9,7 @@ test("the home row shows the quote detail on every width", () => {
   const row = read("./LaunchRow.tsx");
   assert.match(row, /const cap = capDisplay\(l\.fdv_quote, l\.quote_usd/);
   assert.equal((row.match(/>\{cap\.detail\}</g) ?? []).length, 2, "one rendered detail line for desktop, one for mobile");
-  assert.match(row, /md:hidden"><span className="block truncate[^"]*" title=\{capDetail\}>\{cap\.detail\}<\/span>/, "the mobile block carries the detail");
+  assert.match(row, /lg:hidden"><span className="block truncate[^"]*" title=\{capDetail\}>\{cap\.detail\}<\/span>/, "the phone and tablet block carries the quote detail");
 });
 
 test("one-string sites use the compact form, which carries the mark for an unpriced quote", () => {

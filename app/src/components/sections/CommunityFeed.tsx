@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, MessageSquare, RefreshCw, Search, Signature, X } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@/components/vendor/toggle-group";
+import ChainSelector from "@/components/launchpad/ChainSelector";
 import TokenAvatar from "@/components/launchpad/TokenAvatar";
 import WalletAvatar from "@/components/WalletAvatar";
 import { useLive } from "@/components/launchpad/LiveProvider";
@@ -50,29 +50,27 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
 
   return <div className={styles.layout}>
     <section className={shell.panel} aria-label="Recent community posts" aria-busy={refreshing}>
+      <header className={styles.controls}>
       <div className={styles.toolbar}>
         <div className={styles.feedTitle}><MessageSquare size={17} aria-hidden="true" /><h2>Community feed</h2><span>Newest first</span></div>
-        <button type="button" className={styles.refresh} onClick={() => startTransition(() => router.refresh())} disabled={refreshing} aria-label="Refresh posts" title="Refresh posts"><RefreshCw size={15} aria-hidden="true" /></button>
       </div>
       <div className={styles.filters}>
-        <ToggleGroup multiple={false} value={[chain ?? "all"]} onValueChange={(values) => { if (values[0]) setChain(values[0] === "all" ? null : values[0] as ChainKey); }} aria-label="Filter posts by chain">
-          <ToggleGroupItem value="all" className="min-h-11">All chains</ToggleGroupItem>
-          <ToggleGroupItem value="base" className="min-h-11">Base</ToggleGroupItem>
-          <ToggleGroupItem value="robinhood" className="min-h-11">Robinhood</ToggleGroupItem>
-        </ToggleGroup>
+        <ChainSelector value={chain} onChange={setChain} label="Filter posts by chain" />
         <div className={styles.search}>
           <Search size={15} aria-hidden="true" />
           <input type="search" aria-label="Search recent posts" placeholder="Search recent posts" value={query} onChange={(e) => setQuery(e.target.value)} />
           {query ? <button type="button" aria-label="Clear post search" onClick={() => setQuery("")}><X size={14} aria-hidden="true" /></button> : null}
         </div>
+        <button type="button" className={styles.refresh} onClick={() => startTransition(() => router.refresh())} disabled={refreshing} aria-label="Refresh posts" title="Refresh posts"><RefreshCw size={15} aria-hidden="true" /></button>
       </div>
       <div className={styles.resultLine}><p role="status">{refreshing ? "Refreshing posts…" : loadError ? "Feed unavailable" : <><span>{shown.length}</span> {filtered ? "matching" : "recent"} {shown.length === 1 ? "post" : "posts"}</>}</p><span>Token-page conversations</span></div>
+      </header>
       {loadError ? <div className={styles.empty}>
         <MessageSquare size={30} aria-hidden="true" className={styles.emptyIcon} /><h3>The feed couldn’t load.</h3><p>Your connection or the indexer may be unavailable. You can retry without connecting a wallet.</p><button type="button" className={shell.action} disabled={refreshing} onClick={() => startTransition(() => router.refresh())}>Try again <RefreshCw size={14} aria-hidden="true" /></button>
       </div> : shown.length === 0 ? <div className={styles.empty}>
-        <div className={styles.conversationMark} aria-hidden="true"><MessageSquare size={30} /><span /><span /></div>
-        <p className={styles.emptyEyebrow}>{filtered ? "Nothing in this view" : "Room for a first word"}</p>
+        <MessageSquare size={30} aria-hidden="true" className={styles.emptyIcon} />
         <h3>{filtered ? "No matching conversations." : "The next conversation starts with you."}</h3>
+        <p className={styles.emptyEyebrow}>{filtered ? "Nothing in this view" : "Room for a first word"}</p>
         <p>{filtered ? "Try another chain or search term. Search covers only the recent posts loaded here." : "Open a token, head to Conversation, and add your perspective. Holders, traders and creators can post with a free wallet signature."}</p>
         {filtered ? <button type="button" onClick={reset} className={shell.action}>Clear filters <X size={14} aria-hidden="true" /></button> : <Link href="/#launches" className={shell.action}>Find a token <ArrowRight size={15} aria-hidden="true" /></Link>}
       </div> : <ol className={styles.posts} aria-label="Posts, newest first">
@@ -108,8 +106,8 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
 
     <aside className={styles.aside} aria-label="About the community">
       <section className={styles.guide}>
-        <p className={styles.asideEyebrow}>A little context goes a long way</p>
         <h2>Join from the token.</h2>
+        <p className={styles.asideEyebrow}>A little context goes a long way</p>
         <p>Every post belongs to a token. The full thread, the market and the contracts stay together.</p>
         <ol className={styles.steps}>
           <li><span>01</span><div><h3>Find your token</h3><p>Browse launches on either chain.</p></div></li>

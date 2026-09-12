@@ -1,10 +1,11 @@
 import { Sk, SkPost, SkRow } from "@/components/Skeleton";
+import { LaunchListHeader } from "@/components/launchpad/LaunchRow";
 
-/** Home skeleton: hero + totals, list header, rows, side column. Same grid as page.tsx so nothing shifts. */
+/** The readable hero, open market toolbar and support rail follow page.tsx. */
 export default function Loading() {
   return (
-    <main className="relative mx-auto max-w-6xl px-4 pb-16 space-y-8" aria-busy="true" aria-label="loading">
-      <section className="pt-10 sm:pt-14 pb-2 grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-x-8 gap-y-8 xl:gap-x-12 lg:gap-y-0 lg:grid-rows-[min-content_1fr]">
+    <main className="relative pb-16 space-y-8" aria-busy="true" aria-label="loading">
+      <section className="mx-auto max-w-6xl px-4 pt-10 sm:pt-14 pb-2 grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-x-8 gap-y-8 xl:gap-x-12 lg:gap-y-0 lg:grid-rows-[min-content_1fr]">
         <div className="min-w-0 lg:col-start-1 lg:row-start-1">
           <div className="space-y-2">
             {[0, 1, 2].map((i) => <Sk key={i} className="h-11 sm:h-14 lg:h-12 xl:h-14 w-11/12" />)}
@@ -28,27 +29,36 @@ export default function Loading() {
           <Sk className="mt-5 h-3 w-44" />
         </div>
       </section>
-      <div className="space-y-3"><Sk className="h-4 w-40" /><Sk className="h-16 w-full rounded-xl" /></div>
+      <div className="workspace-shell space-y-6">
+      <div className="space-y-2">
+        <Sk className="h-4 w-40" />
+        <div className="grid grid-flow-col auto-cols-[minmax(15rem,1fr)] divide-x divide-line overflow-hidden border-y border-line lg:auto-cols-fr">
+          {[0, 1, 2].map((i) => <div key={i} className="space-y-3 px-4 py-3"><div className="flex items-center gap-2"><Sk className="size-7 shrink-0 rounded-lg" /><Sk className="h-3 w-28" /></div><div className="flex justify-between gap-4"><Sk className="h-4 w-20" /><Sk className="h-3 w-12" /></div><Sk className="h-2.5 w-full" /></div>)}
+        </div>
+      </div>
       <div className="grid xl:grid-cols-[minmax(0,1fr)_17rem] gap-6 items-start">
-        <section className="overflow-hidden rounded-2xl border border-line bg-paper">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-5">
-            <Sk className="h-7 w-32" />
-            <Sk className="h-11 w-full sm:w-64 rounded-xl" />
+        <section className="min-w-0">
+          <div className="flex h-12 items-center gap-6 border-b border-line">
+            <Sk className="h-4 w-24" /><Sk className="h-4 w-28" />
           </div>
-          <div className="space-y-4 px-4 py-4">
-            <Sk className="h-10 w-full max-w-md" />
-            <Sk className="h-11 w-64 max-w-full rounded-xl" />
-            <Sk className="h-10 w-64 max-w-full" />
-            <Sk className="h-3 w-36" />
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 py-1.5 sm:flex sm:gap-2">
+            <Sk className="col-span-2 h-11 w-full min-w-0 rounded-lg sm:min-w-36 sm:flex-1 sm:basis-40" /><Sk className="h-11 w-28 shrink-0 rounded-lg" /><Sk className="h-11 w-24 shrink-0 rounded-lg" />
           </div>
+          <div className="flex h-11 items-center gap-6 overflow-hidden border-b border-line">
+            {[0, 1, 2, 3, 4, 5].map((i) => <Sk key={i} className="h-3 w-12 shrink-0" />)}
+          </div>
+          <div className="flex h-8 items-center justify-between gap-3">
+            <Sk className="h-2.5 w-28" /><Sk className="h-2.5 w-24" />
+          </div>
+          <LaunchListHeader window="all" />
           <ul>
             {Array.from({ length: 8 }, (_, i) => (
               <SkRow key={i} i={i} ledger />
             ))}
           </ul>
         </section>
-        <aside className="space-y-4">
-          <div className="rounded-2xl bg-card border border-line shadow-card overflow-hidden">
+        <aside className="grid min-w-0 gap-6 border-t border-line pt-4 md:grid-cols-2 xl:grid-cols-1 xl:border-t-0 xl:border-l xl:pt-0">
+          <div className="min-w-0">
             <div className="flex min-h-14 items-center justify-between border-b border-line px-4">
               <Sk className="h-4 w-14" />
               <Sk className="h-3 w-16" />
@@ -59,7 +69,8 @@ export default function Loading() {
               ))}
             </ul>
           </div>
-          <div className="rounded-2xl bg-card border border-line shadow-card overflow-hidden">
+          <div className="min-w-0 space-y-6">
+          <div>
             <div className="flex min-h-14 items-center justify-between gap-2 border-b border-line px-4">
               <Sk className="h-4 w-20" />
               <div className="flex items-center gap-2"><Sk className="h-3 w-14" /><Sk className="h-10 w-10 rounded-lg" /></div>
@@ -70,7 +81,15 @@ export default function Loading() {
               ))}
             </ul>
           </div>
+          <div className="space-y-4 border-t border-line px-4 pt-6">
+            <Sk className="h-4 w-24" />
+            <div className="space-y-2"><Sk className="h-3 w-full" /><Sk className="h-3 w-4/5" /></div>
+            <div className="space-y-3">{[0, 1].map((i) => <div key={i} className="flex justify-between gap-4"><Sk className="h-3 w-20" /><Sk className="h-3 w-12" /></div>)}</div>
+            <Sk className="h-3 w-4/5" />
+          </div>
+          </div>
         </aside>
+      </div>
       </div>
     </main>
   );

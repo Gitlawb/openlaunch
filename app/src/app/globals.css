@@ -60,6 +60,30 @@
 
 :root {
   color-scheme: light;
+  --workspace-gutter: 16px;
+}
+
+/* Operating surfaces use the screen; prose and the home introduction keep
+   their own readable measure. Header and footer share these edge gutters. */
+.workspace-shell {
+  width: 100%;
+  min-width: 0;
+  padding-inline: var(--workspace-gutter);
+}
+@media (min-width: 640px) { :root { --workspace-gutter: 24px; } }
+@media (min-width: 1280px) { :root { --workspace-gutter: 32px; } }
+
+/* One track definition for the ledger header, rows and loading state.
+   Wider screens distribute space across the figures, not just the name. */
+@media (min-width: 640px) {
+  .launch-ledger {
+    grid-template-columns: minmax(0, 1.8fr) minmax(6rem, 1fr) minmax(5rem, .8fr) minmax(4.5rem, .7fr);
+  }
+}
+@media (min-width: 1024px) {
+  .launch-ledger {
+    grid-template-columns: minmax(0, 2.2fr) minmax(6.5rem, 1fr) minmax(5.5rem, .8fr) minmax(6rem, 1fr) minmax(5rem, .8fr) minmax(2.5rem, .45fr);
+  }
 }
 
 /* ── Dark: black ground, alpha ramp of white, near-zero chroma greys. The blue

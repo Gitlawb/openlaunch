@@ -23,7 +23,7 @@ import type { EditFields } from "@/lib/launchpad/editAuth";
 import { ago } from "@/lib/launchpad/time";
 import { BUILDER_DATA_SUFFIX, CHAINS, CHAIN_SHORT, explorerTx, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { friendlyError } from "@/lib/errors";
-import { SkRow, SkStat } from "@/components/Skeleton";
+import { Sk, SkRow } from "@/components/Skeleton";
 import ConnectWallet from "@/components/ConnectWallet";
 import styles from "./MeDashboard.module.css";
 
@@ -157,8 +157,8 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
         <section className={styles.welcome} aria-labelledby="wallet-welcome">
           <div className={styles.welcomeMain}>
             <span className={styles.walletMark} aria-hidden="true"><Wallet size={28} strokeWidth={1.5} /></span>
-            <p className={styles.eyebrow}>Start with your wallet</p>
             <h2 id="wallet-welcome">Your wallet.<br /><span>Your workspace.</span></h2>
+            <p className={styles.eyebrow}>Start with your wallet</p>
             <p className={styles.welcomeCopy}>Bring your launches, fees and trading activity into one view. No new account to create.</p>
             <ConnectWallet className={styles.connectButton}>
               Connect wallet<ArrowRight size={16} aria-hidden="true" />
@@ -197,7 +197,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
     return (
       <div className={styles.dashboard}>
         {walletBar}
-        {err ? <div className={styles.error} role="alert"><h2>We couldn’t load your dashboard.</h2><p>{err}. Your wallet and tokens are unchanged.</p><button type="button" className={styles.outlineButton} onClick={() => void load()} disabled={refreshing}>Try again<RefreshCw size={14} aria-hidden="true" /></button></div> : <div className={styles.loading} aria-busy="true" aria-label="Loading your dashboard"><dl className={styles.loadingStats}>{Array.from({ length: 4 }, (_, k) => <SkStat key={k} />)}</dl><ul className={styles.loadingRows}>{Array.from({ length: 3 }, (_, k) => <SkRow key={k} i={k} />)}</ul></div>}
+        {err ? <div className={styles.error} role="alert"><h2>We couldn’t load your dashboard.</h2><p>{err}. Your wallet and tokens are unchanged.</p><button type="button" className={styles.outlineButton} onClick={() => void load()} disabled={refreshing}>Try again<RefreshCw size={14} aria-hidden="true" /></button></div> : <div className={styles.loading} aria-busy="true" aria-label="Loading your dashboard"><div className={styles.loadingStats}>{Array.from({ length: 4 }, (_, k) => <div key={k} className={styles.stat}><Sk className="h-3 w-24 max-w-full" /><Sk className="mt-3 h-7 w-20 max-w-full" /><Sk className="mt-3 h-2 w-28 max-w-full" /></div>)}</div><ul className={styles.loadingRows}>{Array.from({ length: 3 }, (_, k) => <SkRow key={k} i={k} />)}</ul></div>}
       </div>
     );
   }
