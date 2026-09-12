@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useBalance, useConfig, useReadContract, useSwitchChain } from "wagmi";
 import { getPublicClient, getWalletClient } from "wagmi/actions";
@@ -15,6 +15,7 @@ import { fmtCompact, fmtQuoteUnits, fmtUsd, minOut, units, pipsToPct } from "@/l
 import { encodeV4ExactInSingle, type PoolKey } from "@/lib/launchpad/swap";
 import { CHAINS, CHAIN_LABELS, BUILDER_DATA_SUFFIX, explorerTx, type ChainKey } from "@/lib/chainPublic";
 import { tradeQuoteKey } from "@/lib/launchpad/token-market";
+import { SLIPPAGE_PRESETS_BPS, formatSlippageBps, getSlippageBps, getSlippageBpsServer, parseSlippageField, setSlippageBps, subscribeSlippage } from "@/lib/launchpad/trade-slippage";
 import { friendlyError } from "@/lib/errors";
 import { Spinner } from "@/components/Skeleton";
 import ConnectWallet from "@/components/ConnectWallet";
@@ -36,7 +37,6 @@ type Phase =
   | { k: "done"; hash: Hex; side: Side }
   | { k: "error"; message: string };
 
-const SLIPPAGE_BPS = 100; // 1%
 const PERMIT_EXPIRY_S = 30 * 24 * 3600;
 
 
@@ -54,6 +54,12 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   const { switchChainAsync, isPending: switching } = useSwitchChain();
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
+  // Stored slippage via an external store: the server snapshot is always the default, so server and
+  // client render the same markup during hydration (an effect that sets state is rejected by lint).
+  const getSlippageSnapshot = useMemo(() => () => getSlippageBps(chain), [chain]);
+  const slippageBps = useSyncExternalStore(subscribeSlippage, getSlippageSnapshot, getSlippageBpsServer);
+  const [slippageInput, setSlippageInput] = useState<string | null>(null);
+  const [slippageError, setSlippageError] = useState<string | null>(null);
   const [quote_, setQuote] = useState<{ out: bigint; forKey: string } | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [phase, setPhase] = useState<Phase>({ k: "idle" });
@@ -109,11 +115,19 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
     // Lock before the first await, including wallet lookup and RPC preflight.
     transactionLock.current = true;
     setPhase({ k: "preparing" });
+    // Declared here so catch can use it; assigned after preflight so the
+    // synchronous lock/preparing prefix stays dependency-free for the safety
+    // harness. Null means preflight failed before the tolerance was read —
+    // those errors are never slippage reverts, so the default applies.
+    let tradeSlippageBps: number | null = null;
     try {
       if (!onChain) await switchChainAsync({ chainId: CHAIN.id });
       const pub = getPublicClient(config, { chainId: CHAIN.id })!;
       const wallet = await getWalletClient(config, { chainId: CHAIN.id });
-      const min = minOut(quote_.out, SLIPPAGE_BPS);
+      // The closure value is fixed per render, so mid-flight preset picks in a
+      // newer render cannot change this transaction's tolerance either way.
+      tradeSlippageBps = slippageBps;
+      const min = minOut(quote_.out, tradeSlippageBps);
 
       // Whatever ERC20 we are paying with (the token on a sell, an ERC20 quote on a buy) goes through Permit2.
       const payToken: Address | null = side === "sell" ? token : isNative ? null : quote.address;
@@ -166,7 +180,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
       onTraded?.();
       router.refresh();
     } catch (err) {
-      setPhase({ k: "error", message: friendlyError(err) });
+      setPhase({ k: "error", message: friendlyError(err, tradeSlippageBps !== null ? { slippagePct: tradeSlippageBps / 100 } : {}) });
     } finally {
       transactionLock.current = false;
     }
@@ -207,8 +221,48 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
         </div>
       </div>
       <dl className="space-y-2 text-[11px]">
-        <div className="flex justify-between gap-3"><dt className="text-muted">Minimum received</dt><dd className="text-right font-mono text-body tnum">{quote_ && quote_.forKey === quoteKey ? (side === "buy" ? `${fmtCompact(Number(minOut(quote_.out, SLIPPAGE_BPS)) / 1e18)} ${symbol}` : fmtQ(minOut(quote_.out, SLIPPAGE_BPS))) : "—"}</dd></div>
-        <div className="flex justify-between gap-3"><dt className="text-muted">Slippage tolerance</dt><dd className="font-mono text-body tnum">1%</dd></div>
+        <div className="flex justify-between gap-3"><dt className="text-muted">Minimum received</dt><dd className="text-right font-mono text-body tnum">{quote_ && quote_.forKey === quoteKey ? (side === "buy" ? `${fmtCompact(Number(minOut(quote_.out, slippageBps)) / 1e18)} ${symbol}` : fmtQ(minOut(quote_.out, slippageBps))) : "—"}</dd></div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-muted"><label htmlFor={`slippage-${chain}-${token}`}>Slippage tolerance</label></dt>
+          <dd className="flex items-center gap-1.5">
+            {SLIPPAGE_PRESETS_BPS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={busy}
+                aria-pressed={slippageBps === p}
+                aria-label={`Slippage ${formatSlippageBps(p)}`}
+                onClick={() => { setSlippageBps(chain, p); setSlippageInput(null); setSlippageError(null); }}
+                className={`min-h-7 rounded-md border px-2 font-mono text-[11px] tnum disabled:opacity-40 ${slippageBps === p ? "border-line-strong bg-paper text-ink" : "border-line text-muted hover:border-line-strong"}`}
+              >
+                {formatSlippageBps(p)}
+              </button>
+            ))}
+            <span className="relative">
+              <input
+                id={`slippage-${chain}-${token}`}
+                disabled={busy}
+                className="h-7 w-16 rounded-md border border-line bg-transparent px-1.5 pr-5 text-right font-mono text-[11px] text-ink tnum outline-offset-2 placeholder:text-faint disabled:opacity-40"
+                value={slippageInput ?? String(slippageBps / 100)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setSlippageInput(raw);
+                  const parsed = parseSlippageField(raw);
+                  if (parsed === null) { setSlippageError(raw.trim() === "" ? null : "0.1–20%"); return; }
+                  setSlippageError(null);
+                  setSlippageBps(chain, parsed);
+                }}
+                onBlur={() => setSlippageInput(null)}
+                inputMode="decimal"
+                autoComplete="off"
+                aria-label="Custom slippage percent"
+                aria-describedby={slippageError ? `slippage-err-${chain}` : undefined}
+              />
+              <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted">%</span>
+            </span>
+          </dd>
+        </div>
+        {slippageError ? <p id={`slippage-err-${chain}`} role="alert" className="text-right text-[10px] text-down-ink">Use 0.1–20%.</p> : null}
       </dl>
 
       {!configured ? (
