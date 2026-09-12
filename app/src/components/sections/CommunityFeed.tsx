@@ -11,7 +11,7 @@ import { useLive } from "@/components/launchpad/LiveProvider";
 import { CHAIN_SHORT, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { ago, nowMs } from "@/lib/launchpad/time";
 import type { PostRow } from "@/lib/launchpad/postsServer";
-import { communityFingerprint, filterCommunityPosts, reconcileCommunityWindow } from "@/lib/launchpad/community-feed";
+import { communityFingerprint, filterCommunityPosts, reconcileCommunityWindow, revealCommunityPosts } from "@/lib/launchpad/community-feed";
 import shell from "./SectionShell.module.css";
 import styles from "./CommunityFeed.module.css";
 
@@ -108,12 +108,13 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
   const filtered = Boolean(chain || query.trim());
   function reset() { setChain(null); setQuery(""); }
   function showNewPosts() {
-    setEntering(pending.map((post) => post.id));
+    const revealIds = pending.map((post) => post.id);
+    setEntering(revealIds);
     if (entryTimer.current) clearTimeout(entryTimer.current);
     // Clear even when reduced motion disables animationend, so changing a filter
     // later cannot replay an old batch's entrance.
     entryTimer.current = setTimeout(() => setEntering([]), 250);
-    setFeed({ source: feed.source, ...reconcileCommunityWindow(feed, feed.source, false) });
+    setFeed((current) => ({ source: current.source, ...revealCommunityPosts(current, current.source, revealIds) }));
   }
 
   return <div className={styles.layout}>

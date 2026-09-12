@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { communityFingerprint, filterCommunityPosts, reconcileCommunityWindow } from "./community-feed.ts";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+import { communityFingerprint, filterCommunityPosts, reconcileCommunityWindow, revealCommunityPosts } from "./community-feed.ts";
 
 const posts = [
   { id: 1, chain: "base", token: "0xAbC", wallet: "0xWallet", symbol: "SKY", name: "Clear Sky", body: "A real conversation", tag: "creator", created_at: "2026-09-07T00:00:00Z" },
@@ -66,6 +68,111 @@ test("visible and queued counts use the same chain and search filters", () => {
   assert.equal(filterCommunityPosts(buffered.pending, "robinhood", " moon ").length, 1);
   assert.equal(filterCommunityPosts(buffered.visible, "robinhood", " moon ").length, 1);
 });
+
+test("revealing one chain leaves other-chain notifications queued in server order", () => {
+  const source = [
+    { ...posts[1], id: 6 }, { ...posts[0], id: 5 },
+    { ...posts[1], id: 4 }, { ...posts[0], id: 3 }, ...posts,
+  ];
+  const queued = reconcileCommunityWindow({ visible: posts, pending: [] }, source, true);
+  const selected = filterCommunityPosts(queued.pending, "base", "");
+  const revealed = revealCommunityPosts(queued, source, selected.map((post) => post.id));
+  assert.deepEqual(revealed.visible.map((post) => post.id), [5, 3, 1, 2]);
+  assert.deepEqual(revealed.pending.map((post) => post.id), [6, 4]);
+  assert.equal(filterCommunityPosts(revealed.pending, "robinhood", "").length, 2);
+  assert.deepEqual(reconcileCommunityWindow(revealed, source, true), revealed, "a refresh keeps unrevealed notifications");
+  assert.deepEqual(queued.pending.map((post) => post.id), [6, 5, 4, 3], "the previous window is not mutated");
+  const all = revealCommunityPosts(revealed, source, revealed.pending.map((post) => post.id));
+  assert.deepEqual(all, { visible: source, pending: [] }, "clearing filters can reveal the remaining batch");
+});
+
+test("search reveals preserve nonmatching posts on the same chain and other chains", () => {
+  const source = [
+    { ...posts[1], id: 5, body: "Needle" },
+    { ...posts[0], id: 4, body: "Unrelated" },
+    { ...posts[0], id: 3, body: "Needle" }, ...posts,
+  ];
+  const queued = reconcileCommunityWindow({ visible: posts, pending: [] }, source, true);
+  for (const chain of [null, "base"]) {
+    const selected = filterCommunityPosts(queued.pending, chain, "  needle ");
+    const revealed = revealCommunityPosts(queued, source, selected.map((post) => post.id));
+    assert.equal(filterCommunityPosts(revealed.pending, chain, "needle").length, 0);
+    assert.deepEqual(revealed.pending.map((post) => post.id), chain ? [5, 4] : [4]);
+    assert.deepEqual(filterCommunityPosts(revealed.visible, chain, "needle"), selected);
+  }
+  assert.deepEqual(revealCommunityPosts(queued, source, []), queued, "an empty selection consumes nothing");
+});
+
+test("an empty filtered view reveals its matching posts without draining other views", () => {
+  const source = [{ ...posts[1], id: 4 }, { ...posts[0], id: 3 }];
+  const queued = reconcileCommunityWindow({ visible: [], pending: [] }, source, true);
+  const selected = filterCommunityPosts(queued.pending, "base", "");
+  const revealed = revealCommunityPosts(queued, source, selected.map((post) => post.id));
+  assert.deepEqual(revealed, { visible: [source[1]], pending: [source[0]] });
+});
+
+test("stale reveal IDs cannot restore moderated rows or consume later additions", () => {
+  const first = { ...posts[0], id: 3 };
+  const other = { ...posts[1], id: 4 };
+  const queued = reconcileCommunityWindow({ visible: posts, pending: [] }, [other, first, ...posts], true);
+  const latest = [{ ...posts[0], id: 5 }, { ...other, body: "Edited while queued" }, { ...first, hidden: true }, posts[1]];
+  const revealed = revealCommunityPosts(queued, latest, [3, 5, 999]);
+  assert.deepEqual(revealed.visible, [posts[1]], "server removals and moderation still apply");
+  assert.deepEqual(revealed.pending, latest.slice(0, 2), "unseen IDs cannot authorize a later addition");
+});
+
+test("partial reveals retain the bounded, deduplicated authoritative window", () => {
+  const initial = Array.from({ length: 100 }, (_, index) => ({ ...posts[0], id: 100 - index }));
+  const source = [{ ...posts[0], id: 102 }, { ...posts[0], id: 101 }, ...initial];
+  const queued = reconcileCommunityWindow({ visible: initial, pending: [] }, source, true);
+  const revealed = revealCommunityPosts(queued, source, [101, 101]);
+  assert.equal(revealed.visible.length, 99);
+  assert.deepEqual(revealed.pending.map((post) => post.id), [102]);
+  assert.equal(revealed.visible[0].id, 101);
+  assert.equal(revealed.visible.at(-1)?.id, 3);
+});
+
+test("the actual Show handler keeps filtered notifications and intervening refreshes", () => {
+  const source = readFileSync(new URL("../../components/sections/CommunityFeed.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("CommunityFeed.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let declaration = "";
+  function visit(node: ts.Node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "showNewPosts") declaration = node.getText(ast);
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(declaration, "the component must provide its Show handler");
+  const authoritative = [{ ...posts[1], id: 4 }, { ...posts[0], id: 3 }, ...posts];
+  const feed = { source: authoritative, ...reconcileCommunityWindow({ visible: posts, pending: [] }, authoritative, true) };
+  type FeedState = typeof feed;
+  let update: FeedState | ((current: FeedState) => FeedState) | undefined;
+  let entering: number[] = [];
+  let clearEntry: (() => void) | undefined;
+  const { outputText } = ts.transpileModule(`(${declaration})`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } });
+  // Execute the real handler with inert React setters/timer, not a copy of it.
+  const show = runInNewContext(outputText, {
+    feed, pending: filterCommunityPosts(feed.pending, "base", ""),
+    reconcileCommunityWindow, revealCommunityPosts, entryTimer: { current: null },
+    setFeed: (next: typeof update) => { update = next; },
+    setEntering: (ids: number[]) => { entering = Array.from(ids); },
+    setTimeout: (callback: () => void, delay: number) => { assert.equal(delay, 250); clearEntry = callback; return 1; },
+    clearTimeout: () => {},
+  }) as () => void;
+  show();
+  assert.ok(update);
+  const latest = [{ ...posts[1], id: 5 }, { ...authoritative[0], body: "Edited" }, ...authoritative.slice(1)];
+  const current = { source: latest, ...reconcileCommunityWindow(feed, latest, true) };
+  const revealed = typeof update === "function" ? update(current) : update;
+  assert.equal(revealed.source, latest, "the handler must not overwrite a newer server payload");
+  assert.deepEqual(revealed.pending.map((post) => post.id), [5, 4]);
+  assert.equal(revealed.pending[1].body, "Edited");
+  assert.deepEqual(revealed.visible.map((post) => post.id), [3, 1, 2]);
+  assert.deepEqual(entering, [3], "only posts represented by the clicked button animate");
+  assert.ok(clearEntry);
+  clearEntry();
+  assert.deepEqual(entering, []);
+});
+
 test("reader-at-top updates publish the current server rows without a queue", () => {
   const next = { ...posts[1], id: 3 };
   const result = reconcileCommunityWindow({ visible: posts, pending: [] }, [next, ...posts], false);

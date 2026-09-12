@@ -70,7 +70,11 @@ test("wallet identity and finite feedback do not replace receipt-based collectio
   assert.match(source, /<WalletAvatar address=\{address\} size=\{40\}/);
   assert.match(source, /collecting\.current \|\| collectingBatch\.current/);
   assert.match(source, /if \(!mounted\.current\) return false/);
-  assert.ok(source.indexOf('if (receipt.status !== "success")') < source.indexOf('stage: "confirmed", message:'));
+  const receiptGuard = source.indexOf('if (receipt.status !== "success")');
+  const confirmedFeedback = source.indexOf('stage: "confirmed", message:');
+  assert.ok(receiptGuard >= 0, "collection must check the receipt status");
+  assert.ok(confirmedFeedback >= 0, "collection must provide confirmed feedback");
+  assert.ok(receiptGuard < confirmedFeedback, "the receipt check must precede confirmed feedback");
   assert.match(source, /setCollection\(\{ symbol: l\.symbol, stage: "signing" \}\)/);
   assert.match(source, /setCollection\(\{ symbol: l\.symbol, stage: "confirming" \}\)/);
   assert.match(source, /Indexed totals may take a moment to update/);

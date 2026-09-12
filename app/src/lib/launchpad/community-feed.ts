@@ -33,3 +33,14 @@ export function reconcileCommunityWindow<T extends { id: number; hidden?: boolea
     pending: current.filter((post) => !visibleIds.has(post.id)),
   };
 }
+
+/** Reveal selected pending IDs without consuming other views' notifications. */
+export function revealCommunityPosts<T extends { id: number; hidden?: boolean }>(
+  previous: CommunityWindow<T>, authoritative: T[], postIds: readonly number[],
+): CommunityWindow<T> {
+  const selected = new Set(postIds);
+  return reconcileCommunityWindow({
+    visible: [...previous.visible, ...previous.pending.filter((post) => selected.has(post.id))],
+    pending: previous.pending,
+  }, authoritative, true);
+}
