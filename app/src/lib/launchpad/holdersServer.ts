@@ -34,7 +34,7 @@ export async function getHolderPanel(chain: ChainKey, token: string): Promise<Ho
       SELECT h.holder, h.balance::text AS balance FROM bb_token_holders h
        WHERE h.chain_id = ${cid} AND h.token = ${t} AND h.balance > 0 AND NOT (h.holder = ANY(${excluded}))
        ORDER BY h.balance DESC LIMIT ${TOP_HOLDERS}`, // qualified: a bare "balance" would sort the ::text alias
-    db<{ trader: string; is_buy: boolean; block_number: bigint; amount1: string }[]>`
+    db<{ trader: string | null; is_buy: boolean; block_number: bigint; amount1: string }[]>`
       SELECT trader, is_buy, block_number, amount1::text AS amount1 FROM bb_launch_swaps WHERE chain_id = ${cid} AND token = ${t}`,
     db<{ balance: string }[]>`
       SELECT COALESCE(sum(balance), 0)::text AS balance FROM bb_token_holders WHERE chain_id = ${cid} AND token = ${t} AND holder = ANY(${system})`,
