@@ -42,7 +42,9 @@ test("static sitemap covers every public route and skips /admin", () => {
   assert.ok(!paths.includes("/admin"), "/admin must stay out of the sitemap");
   const entries = staticSitemapEntries(SITE, "2026-09-06T00:00:00.000Z");
   assert.equal(entries.length, STATIC_SITEMAP_ROUTES.length);
-  assert.ok(entries.every((e) => e.url.startsWith(SITE)));
+  for (const entry of entries) {
+    assert.equal(new URL(entry.url).origin, new URL(SITE).origin);
+  }
   assert.equal(entries[0].url, `${SITE}/`);
 });
 

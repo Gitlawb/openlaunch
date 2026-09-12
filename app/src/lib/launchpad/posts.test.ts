@@ -25,6 +25,50 @@ test("post message binds chain, token, wallet, reply, nonce, time and body", () 
   assert.ok(buildModMessage({ action: "hide", target: "post:3", wallet: "0xCD", nonce: "n", ts: 0 }).includes("Action: hide"));
 });
 
+test("validateBody preserves every code unit except the intended controls and CR normalization", () => {
+  for (let unit = 0; unit <= 0xffff; unit++) {
+    const character = String.fromCharCode(unit);
+    const stripped = unit <= 0x08 || unit === 0x0b || unit === 0x0c
+      || (unit >= 0x0e && unit <= 0x1f) || unit === 0x7f;
+    const expected = stripped ? "" : unit === 0x0d ? "\n" : character;
+    // Sentinels keep whitespace inside the body, independent of edge trimming.
+    assert.deepEqual(validateBody(`a${character}z`), { ok: true, body: `a${expected}z` }, `code unit ${unit.toString(16)}`);
+  }
+});
+
+test("validateBody retains text whitespace and Unicode while normalizing line endings", () => {
+  assert.deepEqual(validateBody(" \tfirst\tsecond\r\nthird\rfourth\n\n\nfifth\t "), {
+    ok: true,
+    body: "first\tsecond\nthird\nfourth\n\nfifth",
+  });
+  const unicode = "தமிழ் café e\u0301 👩‍💻 🚀 — \u200b\u0085\u009f";
+  assert.deepEqual(validateBody(unicode), { ok: true, body: unicode });
+  assert.deepEqual(validateBody("a\u0000b\u0007c\u0008d\u000be\u000cf\u000eg\u001fh\u007f"), {
+    ok: true,
+    body: "abcdefgh",
+  });
+  assert.deepEqual(validateBody("\u0000\u0008\u000b\u000c\u000e\u001f\u007f"), { ok: false, error: "empty post" });
+  assert.deepEqual(validateBody("x".repeat(500) + "\u0000\u001f\u007f"), { ok: true, body: "x".repeat(500) });
+});
+
+test("normalized post bodies retain their byte-exact signed message", () => {
+  const result = validateBody(" \tgm\u0000\tfrens\r\nதமிழ் 🚀 — open\u007f ");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(buildPostMessage({ chain: "base", token: "0xAB", wallet: "0xCD", nonce: "n", ts: 0, parentId: 7, body: result.body }), [
+    "openlaunch.lol \u2014 sign to post. Free, no transaction.",
+    "",
+    "Chain: base",
+    "Token: 0xab",
+    "Wallet: 0xcd",
+    "Reply to: 7",
+    "Nonce: n",
+    "Time: 1970-01-01T00:00:00.000Z",
+    "",
+    "gm\tfrens\nதமிழ் 🚀 — open",
+  ].join("\n"));
+});
+
 test("copy cleanup preserves byte-exact wallet signature headers and user text", () => {
   const body = "hello \u2014 world";
   const message = buildPostMessage({ chain: "base", token: "0xAB", wallet: "0xCD", nonce: "n", ts: 0, parentId: null, body });
