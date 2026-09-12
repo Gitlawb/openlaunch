@@ -139,11 +139,12 @@ test("failures back off for one TTL and the request carries a timeout", async ()
   assert.equal(ETH_FETCH_TIMEOUT_MS, 5_000);
 });
 
-test("feedEthUsd: a positive round under the max age is a price; older, zero or negative is not", () => {
+test("feedEthUsd: a positive round under the max age is a price; older, future, zero or negative is not", () => {
   const nowS = 1_700_000_000;
   assert.equal(feedEthUsd({ answer: 244134000000n, updatedAt: nowS - 488 }, nowS), 2441.34, "the round seen on-chain when the feed address was verified");
   assert.equal(feedEthUsd({ answer: 244134000000n, updatedAt: nowS - ETH_FEED_MAX_AGE_S }, nowS), 2441.34, "exactly the max age still counts");
   assert.equal(feedEthUsd({ answer: 244134000000n, updatedAt: nowS - ETH_FEED_MAX_AGE_S - 1 }, nowS), null, "one second past it does not");
+  assert.equal(feedEthUsd({ answer: 244134000000n, updatedAt: nowS + 60 }, nowS), null, "future round (clock skew / bad RPC) is not a price");
   assert.equal(feedEthUsd({ answer: 0n, updatedAt: nowS }, nowS), null);
   assert.equal(feedEthUsd({ answer: -1n, updatedAt: nowS }, nowS), null);
   assert.equal(feedEthUsd({ answer: 244134000000n, updatedAt: 0 }, nowS), null, "no update timestamp");
@@ -232,4 +233,19 @@ test("concurrent callers share one refresh, so an earlier slow attempt cannot ov
   assert.equal(ethPriceSource(), "coinbase");
   c.advance(ETH_PRICE_TTL_MS + 1);
   assert.equal(await ethUsd({ fetchFn: mockFetch(okBody("2600"), seen), feedFn: feedDown, now: c.now }), 2600, "after the TTL a new refresh runs");
+});
+
+test("a Chainlink round published while Coinbase is failing is accepted, not rejected as future (PR #29)", async () => {
+  resetEthPriceCache();
+  const c = clock();
+  const startS = Math.floor(c.now() / 1000);
+  // Coinbase fails after 5s; the feed round is published 3s after the request
+  // started, so it is 2s old once the fallback runs.
+  const slowDown = async () => {
+    c.advance(5_000);
+    return new Response("x", { status: 503 });
+  };
+  const publishedWhileWaiting = async () => ({ answer: 244134000000n, updatedAt: startS + 3 });
+  assert.equal(await ethUsd({ fetchFn: slowDown, feedFn: publishedWhileWaiting, now: c.now }), 2441.34);
+  assert.equal(ethPriceSource(), "chainlink");
 });
