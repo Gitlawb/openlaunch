@@ -1,7 +1,7 @@
 /** Shared class strings for the "Clear Sky" design system. Presentation only. */
 
 const btnBase =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold text-sm whitespace-nowrap transition-colors motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed select-none";
+  "ui-pressable inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold text-sm whitespace-nowrap motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed select-none";
 
 export const btn = {
   primary: `${btnBase} min-h-11 px-5 bg-brand text-inverse hover:bg-brand-strong`,

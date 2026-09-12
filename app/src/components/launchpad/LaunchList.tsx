@@ -18,6 +18,7 @@ import { liveChip, liveTier } from "@/lib/launchpad/ranking";
 import { PAGE_SIZE } from "@/lib/launchpad/paging";
 import { Spinner } from "@/components/Skeleton";
 import { startNav } from "@/components/RouteProgress";
+import styles from "./LaunchList.module.css";
 
 const SORTS: { key: LaunchSort; label: string }[] = [
   { key: "live", label: "Live" },
@@ -217,16 +218,16 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
   return (
     <section aria-labelledby="launches-heading" className="min-w-0 scroll-mt-24">
       <h2 id="launches-heading" className="sr-only">Launches</h2>
-      <div className="market-toolbar grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 py-1.5 sm:flex sm:gap-2">
-          <div className="relative col-span-2 min-w-0 sm:min-w-36 sm:flex-1 sm:basis-40">
+      <div className={`${styles.toolbar} market-toolbar`}>
+          <div className={styles.searchWrap}>
             <label htmlFor="launch-search" className="sr-only">Search launches</label>
-            <Search aria-hidden="true" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input id="launch-search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }} placeholder="Name, symbol or address" className="h-11 w-full rounded-lg border border-transparent bg-card pl-9 pr-11 text-[13px] text-ink placeholder:text-muted hover:border-line focus:border-brand" autoComplete="off" spellCheck={false} />
-            {q ? <button type="button" onClick={() => { setQ(""); document.getElementById("launch-search")?.focus(); }} aria-label="Clear search" className="absolute right-0 top-0 grid h-11 w-11 place-items-center rounded-lg text-muted hover:text-ink"><X size={15} aria-hidden="true" /></button> : null}
+            <Search aria-hidden="true" size={16} className={styles.searchIcon} />
+            <input id="launch-search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }} placeholder="Search token, symbol or address" className={styles.searchInput} autoComplete="off" spellCheck={false} />
+            {q ? <button type="button" onClick={() => { setQ(""); document.getElementById("launch-search")?.focus(); }} aria-label="Clear search" className={styles.clearSearch}><X size={15} aria-hidden="true" /></button> : null}
           </div>
           <ChainSelector value={chain} onChange={(c) => { const keep = !filter || FILTERS.some((f) => f.key === filter && (!f.chain || !c || f.chain === c)); pick(sort, window_, c, keep ? filter : null); }} />
           <Popover>
-            <PopoverTrigger ref={filtersTriggerRef} className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-medium transition-colors hover:bg-card motion-reduce:transition-none ${filter ? "bg-brand-soft text-brand" : "text-body hover:text-ink"}`}><SlidersHorizontal size={14} aria-hidden="true" />Filters{filter ? <span className="font-mono text-[11px]">1</span> : null}</PopoverTrigger>
+            <PopoverTrigger ref={filtersTriggerRef} className={`${styles.filterButton} ui-pressable ${filter ? styles.filterActive : ""}`}><SlidersHorizontal size={14} aria-hidden="true" />Filters{filter ? <span className={styles.filterCount}>1</span> : null}</PopoverTrigger>
             <PopoverContent>
               <div className="flex items-center justify-between gap-3 px-2"><PopoverTitle className="text-sm font-semibold">Filter launches</PopoverTitle><PopoverClose aria-label="Close filters" className="grid h-11 w-11 place-items-center rounded-lg text-muted hover:bg-line hover:text-ink"><X size={15} aria-hidden="true" /></PopoverClose></div>
               <PopoverDescription className="px-2 pb-3 text-xs text-muted">Choose a filter. Select it again to clear.</PopoverDescription>
@@ -236,29 +237,28 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
             </PopoverContent>
           </Popover>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 border-b border-line">
-        <div className="min-w-0 overflow-x-auto bb-scroll">
-          <div role="group" aria-label="Sort launches" className="flex min-w-max gap-5">
-            {SORTS.map((s) => <button key={s.key} type="button" onClick={() => pick(s.key)} aria-pressed={s.key === sort} className={`relative flex min-h-11 items-center gap-1.5 border-b-2 text-xs font-medium transition-colors motion-reduce:transition-none ${s.key === sort ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink"}`}>{s.key === "new" ? <ArrowDownWideNarrow size={13} aria-hidden="true" /> : null}{s.label}</button>)}
+      <div className={styles.sortRail}>
+        <div className={`${styles.sortScroller} bb-scroll`}>
+          <div role="group" aria-label="Sort launches" className={styles.sortGroup}>
+            {SORTS.map((s) => <button key={s.key} type="button" onClick={() => pick(s.key)} aria-pressed={s.key === sort} className={`${styles.sortButton} ui-pressable`}>{s.key === "new" ? <ArrowDownWideNarrow size={13} aria-hidden="true" /> : null}{s.label}</button>)}
           </div>
         </div>
-        {showWindow ? <ToggleGroup aria-label="Volume window" value={[window_]} onValueChange={(values) => { if (values[0]) pick(sort, values[0] as VolumeWindow); }}>
-          {WINDOWS.map((w) => <ToggleGroupItem key={w} value={w} className="min-h-11 px-2.5 font-mono tnum">{w === "all" ? "All time" : w}</ToggleGroupItem>)}
-        </ToggleGroup> : null}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-1.5 text-[11px] text-muted">
-        <div role="status" className="inline-flex flex-wrap items-center gap-2">{updating || searching ? <><Spinner size={11} />{searching ? "Searching all launches…" : "Updating view…"}</> : nq ? <><span className="font-mono tnum">{shown.length}</span> matches</> : <><span className="font-mono tnum">{shown.length} / {live.totals.launches}</span> launches · {chain ? CHAIN_SHORT[chain] : "both chains"}</>}{filter ? <button type="button" onClick={() => { pick(sort, window_, chain, null); filtersTriggerRef.current?.focus(); }} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-soft px-2 text-brand" aria-label="Clear active filter">{FILTERS.find((f) => f.key === filter)?.label}<X size={12} aria-hidden="true" /></button> : null}</div>
-        <span>{holding ? "Order held while browsing" : "Updates every 5s"}</span>
+        <div className={styles.sortMeta}>
+          {showWindow ? <ToggleGroup aria-label="Volume window" value={[window_]} onValueChange={(values) => { if (values[0]) pick(sort, values[0] as VolumeWindow); }}>
+            {WINDOWS.map((w) => <ToggleGroupItem key={w} value={w} className="min-h-9 px-2.5 font-mono tnum">{w === "all" ? "All time" : w}</ToggleGroupItem>)}
+          </ToggleGroup> : null}
+          <div role="status" className={styles.status}><span className={styles.countText}>{updating || searching ? <><Spinner size={11} />{searching ? "Searching…" : "Updating…"}</> : nq ? <><strong>{shown.length}</strong> matches</> : <><strong>{shown.length}</strong> of <span className="tnum">{live.totals.launches}</span> · {chain ? CHAIN_SHORT[chain] : "both chains"}</>}</span>{filter ? <button type="button" onClick={() => { pick(sort, window_, chain, null); filtersTriggerRef.current?.focus(); }} className={styles.activeFilter} aria-label="Clear active filter">{FILTERS.find((f) => f.key === filter)?.label}<X size={12} aria-hidden="true" /></button> : null}<span className={styles.updateState}><span className={styles.updateDot} aria-hidden="true" />{holding ? "Order paused" : "Live · 5s"}</span></div>
+        </div>
       </div>
       <p className="sr-only">{sort === "live" ? "Tokens with buyers first. Every launch stays in New." : "Every token. Open from the start."}</p>
       <LaunchListHeader window={showWindow ? window_ : "all"} />
-      <ul ref={listRef} aria-label="Token launches" aria-busy={updating} onPointerEnter={(e) => { if (e.pointerType === "mouse") interaction.current.pointer = true; }} onPointerLeave={() => { interaction.current.pointer = false; interaction.current.at = Date.now(); }} onPointerDown={() => { interaction.current.at = Date.now(); }} onFocusCapture={() => { interaction.current.focus = true; }} onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { interaction.current.focus = false; interaction.current.at = Date.now(); } }}>
+      <ul className={styles.list} ref={listRef} aria-label="Token launches" aria-busy={updating} onPointerEnter={(e) => { if (e.pointerType === "mouse") interaction.current.pointer = true; }} onPointerLeave={() => { interaction.current.pointer = false; interaction.current.at = Date.now(); }} onPointerDown={() => { interaction.current.at = Date.now(); }} onFocusCapture={() => { interaction.current.focus = true; }} onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { interaction.current.focus = false; interaction.current.at = Date.now(); } }}>
         {shown.map((l, i) => {
           const key = launchKey(l);
           const chip = ranked ? liveChip(l, now) : null;
           const rank = !nq && sort !== "new" && (!chip || chip.tier === "live") ? i + 1 : undefined;
           return <Fragment key={key}>
-            {i === firstQuiet ? <li className="border-b border-line py-1.5 text-[11px] text-muted"><span className="font-medium text-body">Quiet launches</span> · no buyers yet. One row per wallet; every launch stays in New.</li> : null}
+            {i === firstQuiet ? <li className={styles.quietDivider} title="No buyer activity yet. One visible launch per wallet; every launch remains discoverable in New."><span aria-hidden="true" className={styles.quietVisual}><span className={styles.quietDot} /><strong>First-trade queue</strong><span>One market per wallet · always visible in New</span></span><span className="sr-only">Quiet launches. No buyer activity yet. One visible launch per wallet; every launch remains discoverable in New.</span></li> : null}
             <li data-token={key}><LaunchRow l={l} rank={rank} window={showWindow ? window_ : "all"} hl={hl.get(key) ?? null} now={now} pop={Boolean(hl.get(key) && hl.get(key)?.kind !== "new")} chip={chip} /></li>
           </Fragment>;
         })}

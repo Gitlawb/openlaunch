@@ -39,7 +39,9 @@ test("ledger header, data rows and placeholders share responsive tracks", () => 
   assert.match(row, /const columns = "launch-ledger"/);
   assert.equal(row.match(/\$\{columns\}/g)?.length, 2);
   assert.match(source("./Skeleton.tsx"), /className="launch-ledger grid/);
-  assert.match(source("../app/globals.css"), /\.launch-ledger\s*\{\s*grid-template-columns:\s*minmax\(0, 2\.2fr\)/);
+  const css = source("../app/globals.css");
+  assert.match(css, /min-width:\s*640px[\s\S]*grid-template-columns:\s*minmax\(0, 1\.65fr\) minmax\(7rem, \.72fr\) minmax\(9\.5rem, \.9fr\)/);
+  assert.match(css, /min-width:\s*1024px[\s\S]*grid-template-columns:\s*minmax\(20rem, 36rem\) minmax\(8\.5rem, 1fr\) minmax\(7\.5rem, \.8fr\) minmax\(10rem, 1fr\)/);
 });
 
 test("market navigation is docked without changing the server scroll snapshot", () => {

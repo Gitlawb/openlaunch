@@ -54,7 +54,8 @@ test("fee collection and full signed metadata editing keep their existing transa
   assert.match(source, /wallet\.writeContract\(request\)/);
   assert.match(source, /waitForTransactionReceipt\(\{ hash \}\)/);
   assert.match(source, /\/api\/launch\/sync\?chain=\$\{l\.chain\}&tx=\$\{hash\}/);
-  assert.match(source, /if \(p && p > 0n\) await collect\(l\)/);
+  assert.match(source, /me\.launches\.filter\(\(l\) => \(pending\[key\(l\)\] \?\? 0n\) > 0n\)/);
+  assert.match(source, /if \(!mounted\.current \|\| !await collect\(l\)\) break/);
   assert.match(source, /<EditTokenSheet/);
   for (const field of ["description", "image_url", "website", "x_handle"]) {
     assert.ok(source.includes(`${field}: editing.${field}`));
@@ -63,6 +64,22 @@ test("fee collection and full signed metadata editing keep their existing transa
   assert.match(edit, /buildEditMessage/);
   assert.match(edit, /wallet\.signMessage\(\{ message \}\)/);
   assert.match(source, /Name, symbol, fee and beneficiaries cannot change/);
+});
+
+test("wallet identity and finite feedback do not replace receipt-based collection success", () => {
+  assert.match(source, /<WalletAvatar address=\{address\} size=\{40\}/);
+  assert.match(source, /collecting\.current \|\| collectingBatch\.current/);
+  assert.match(source, /if \(!mounted\.current\) return false/);
+  assert.ok(source.indexOf('if (receipt.status !== "success")') < source.indexOf('stage: "confirmed", message:'));
+  assert.match(source, /setCollection\(\{ symbol: l\.symbol, stage: "signing" \}\)/);
+  assert.match(source, /setCollection\(\{ symbol: l\.symbol, stage: "confirming" \}\)/);
+  assert.match(source, /Indexed totals may take a moment to update/);
+  assert.match(source, /Each collection needs your approval/);
+  assert.match(source, /setTimeout\(\(\) => setRefreshed\(false\), 3000\)/);
+  assert.match(source, /setTimeout\(\(\) => setCollection\(null\), 6000\)/);
+  assert.match(source, /role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(source, /collection\.stage === "failed" \? <CircleAlert size=\{16\}/);
+  assert.doesNotMatch(source, /setInterval|setTimeout\([^\n]*stage: "confirmed"/);
 });
 
 test("dashboard controls, tables and responsive styling remain accessible and theme-native", () => {

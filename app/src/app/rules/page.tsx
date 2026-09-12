@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowDown, ArrowRight, ArrowUpRight, ChevronDown, FileCode2, LockKeyhole } from "lucide-react";
 import SectionIntro from "@/components/sections/SectionIntro";
+import DocumentationContents from "@/components/sections/DocumentationContents";
 import shell from "@/components/sections/SectionShell.module.css";
 import styles from "@/components/sections/RulesGuide.module.css";
 import { launchpad } from "@/lib/launchpad/config";
@@ -27,6 +28,7 @@ const FIXED = [
 const CONTENTS = [
   ["launchpad", "The launch"], ["fees", "Fees & routing"], ["immutable", "What stays fixed"], ["know", "Before you begin"], ["contracts", "Contracts"],
 ] as const;
+const CONTENT_LINKS = CONTENTS.map(([id, label], i) => ({ id, label, number: String(i + 1).padStart(2, "0") }));
 
 /** Verification records stay chain-specific and point to each deployed contract. */
 const VERIFIERS: Record<(typeof CHAIN_KEYS)[number], { name: string; url: (addr: string) => string }[]> = {
@@ -51,12 +53,7 @@ export default function RulesPage() {
 
       <div className={styles.layout}>
         <aside className={styles.contents}>
-          <nav aria-label="On this page">
-            <p className={styles.eyebrow}>In this guide</p>
-            <ol>
-              {CONTENTS.map(([id, title], i) => <li key={id}><a href={`#${id}`}><span>{String(i + 1).padStart(2, "0")}</span>{title}</a></li>)}
-            </ol>
-          </nav>
+          <DocumentationContents sections={CONTENT_LINKS} title="In this guide" aria-label="On this page" />
           <a href={BRAND_GITHUB} target="_blank" rel="noreferrer" className={styles.sourceLink}><FileCode2 size={16} aria-hidden="true" /> Read the source <ArrowUpRight size={13} aria-hidden="true" /></a>
         </aside>
 

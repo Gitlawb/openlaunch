@@ -10,7 +10,7 @@ import { CHAIN_SHORT, type ChainKey } from "@/lib/chainPublic";
 export default function ChainSelector({ value, onChange, label = "Chain" }: { value: ChainKey | null; onChange: (chain: ChainKey | null) => void; label?: string }) {
   const [open, setOpen] = useState(false);
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger aria-label={`${label}: ${value ? CHAIN_SHORT[value] : "All chains"}`} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-medium text-body transition-colors hover:bg-card hover:text-ink data-popup-open:bg-card motion-reduce:transition-none">
+    <PopoverTrigger aria-label={`${label}: ${value ? CHAIN_SHORT[value] : "All chains"}`} className="ui-pressable inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium text-body hover:bg-card hover:text-ink data-popup-open:bg-card motion-reduce:transition-none">
       <Layers2 size={14} aria-hidden="true" /><span>{value ? CHAIN_SHORT[value] : "All chains"}</span><ChevronDown size={13} aria-hidden="true" className="text-muted" />
     </PopoverTrigger>
     <PopoverContent className="w-56 p-2">

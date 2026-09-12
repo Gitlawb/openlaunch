@@ -4,11 +4,6 @@
 .layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 56px; margin-top: 48px; }
 .contents { position: sticky; top: 112px; align-self: start; }
 .eyebrow { color: var(--color-muted); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
-.contents ol { margin-top: 14px; }
-.contents li a { display: flex; align-items: center; gap: 12px; min-height: 44px; color: var(--color-body); font-size: 12px; border-radius: 6px; }
-.contents li a span { color: var(--color-muted); font: 10px var(--font-mono); font-variant-numeric: tabular-nums; }
-.contents li a:hover { color: var(--color-ink); }
-.contents li a:hover span { color: var(--color-brand); }
 .sourceLink { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--color-line); color: var(--color-muted); font-size: 12px; }
 .sourceLink:hover { color: var(--color-ink); }
 .article { min-width: 0; display: grid; gap: 64px; }

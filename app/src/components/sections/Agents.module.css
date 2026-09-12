@@ -9,12 +9,6 @@
 .entry > a:hover { text-decoration-color: var(--color-ink); }
 .layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); align-items: start; gap: 48px; }
 .sidebar { position: sticky; top: 100px; min-width: 0; }
-.indexLabel { margin: 0 0 12px; color: var(--color-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
-.sidebar nav > a { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 12px; color: var(--color-body); }
-.sidebar nav > a span { color: var(--color-muted); font-family: var(--font-mono); font-size: 10px; }
-.sidebar nav > a svg { margin-left: auto; color: var(--color-muted); }
-.sidebar nav > a:hover, .sidebar nav > a:focus-visible { color: var(--color-ink); }
-.sidebar nav > a:hover svg, .sidebar nav > a:focus-visible svg { color: var(--color-brand); }
 .sidebarNote { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); color: var(--color-muted); font-size: 11px; line-height: 1.8; text-wrap: pretty; }
 .content { display: grid; gap: 48px; min-width: 0; }
 .section { display: grid; gap: 20px; min-width: 0; }
@@ -44,8 +38,17 @@
 .codeHeader > div { min-width: 0; }
 .codeTitle { display: block; color: var(--color-ink); font-size: 12px; font-weight: 500; }
 .language { display: block; margin-top: 2px; font-size: 10px; color: var(--color-muted); }
-.copyButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 76px; min-height: 44px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; color: var(--color-body); font-size: 11px; cursor: pointer; flex-shrink: 0; }
+.copyButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 88px; min-height: 44px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; color: var(--color-body); font-size: 12px; cursor: pointer; flex-shrink: 0; transition: color 160ms, border-color 160ms, background-color 160ms, transform 160ms; }
 .copyButton:hover { border-color: var(--color-line-strong); color: var(--color-ink); }
+.copyButton:active:not(:disabled) { transform: scale(.97); }
+.copyButton:disabled { cursor: wait; opacity: .65; }
+.copyButton[data-copied] { color: var(--color-up); }
+.example { display: grid; gap: 12px; min-width: 0; }
+.exampleChain { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--color-muted); font-size: 12px; }
+.exampleChain select { min-height: 44px; max-width: 100%; padding: 0 30px 0 12px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-paper); color: var(--color-ink); font: inherit; cursor: pointer; transition: border-color 160ms; }
+.exampleChain select:hover { border-color: var(--color-line-strong); }
+.exampleChain select:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 3px; }
+.exampleChain > span { margin-left: auto; font-size: 11px; }
 .code { max-width: 100%; min-width: 0; margin: 0; padding: 20px 16px; overflow-x: auto; color: var(--color-body); font-family: var(--font-mono); font-size: 13px; line-height: 1.9; scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
 .code code { font-family: inherit; }
 .copyError { margin: 0; padding: 12px 16px; border-top: 1px solid var(--color-line); color: var(--color-body); font-size: 12px; line-height: 1.6; }
@@ -89,15 +92,13 @@
   .entry > a { margin-left: 35px; }
   .layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   .sidebar { position: static; }
-  .sidebar nav { display: flex; flex-wrap: wrap; column-gap: 18px; border-bottom: 1px solid var(--color-line); }
-  .indexLabel { width: 100%; margin-bottom: 4px; }
-  .sidebar nav > a { gap: 8px; }
-  .sidebar nav > a svg, .sidebarNote { display: none; }
+  .sidebarNote { display: none; }
   .sectionHeading h2 { font-size: 22px; }
   .content { gap: 36px; }
   .section + .section { padding-top: 28px; }
   .parameters > div { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }
+@media (prefers-reduced-motion: reduce) { .copyButton, .exampleChain select { transition: none; } .copyButton:active:not(:disabled) { transform: none; } }
 @media (max-width: 479px) {
   .network dl { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .entryHeading { gap: 12px; }

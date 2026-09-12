@@ -10,13 +10,15 @@ export function Sk({ className = "", style }: { className?: string; style?: Reac
 /** One launch row, matching LaunchRow's grid. */
 export function SkRow({ i, ledger = false }: { i: number; ledger?: boolean }) {
   if (ledger) return (
-    <li className="relative border-t border-line pl-11 pr-2 py-3">
+    <li className="relative min-h-[5.25rem] border-b border-line py-3 pl-12 pr-3 sm:min-h-[5.5rem]">
       <Sk className="absolute left-3 top-6 h-4 w-4" />
-      <div className="launch-ledger grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2.5"><Sk className="h-9 w-9 shrink-0 rounded-lg" /><div className="min-w-0 flex-1 space-y-2"><Sk className="h-3.5 w-3/4" /><Sk className="h-2.5 w-full max-w-32" /><Sk className="h-2.5 w-2/3" /></div></div>
-        <div className="space-y-2"><Sk className="ml-auto h-3.5 w-16" /><Sk className="ml-auto h-2.5 w-14" /></div>
-        {[0, 1, 2, 3].map((n) => <Sk key={n} className={`ml-auto hidden h-3 w-full max-w-12 ${n === 0 || n === 3 ? "lg:block" : "sm:block"}`} />)}
-        <div className="col-span-2 grid grid-cols-4 gap-2 pt-1 sm:hidden">{[0, 1, 2, 3].map((n) => <div key={n} className="space-y-2"><Sk className="h-2 w-full" /><Sk className="h-3 w-3/4" /></div>)}</div>
+      <div className="launch-ledger grid grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-center gap-3"><Sk className="h-11 w-11 shrink-0 rounded-xl" /><div className="min-w-0 flex-1 space-y-1.5"><Sk className="h-3.5 w-3/4" /><Sk className="h-2.5 w-full max-w-36" /><Sk className="hidden h-2.5 w-4/5 sm:block" /></div></div>
+        <div className="space-y-1.5"><div className="flex justify-end gap-2"><Sk className="h-4 w-16" /><Sk className="h-3 w-8" /></div><Sk className="ml-auto h-2.5 w-14" /></div>
+        <div className="hidden space-y-1.5 lg:block"><Sk className="ml-auto h-3.5 w-14" /><Sk className="ml-auto h-2.5 w-10" /></div>
+        <div className="ml-auto hidden space-y-1.5 sm:block"><Sk className="ml-auto h-3 w-24" /><Sk className="ml-auto h-2.5 w-28" /></div>
+        <Sk className="col-span-2 h-2.5 w-4/5 sm:hidden" />
+        <div className="col-span-2 grid grid-cols-2 items-end gap-3 sm:hidden"><div className="space-y-1.5"><Sk className="h-2 w-16" /><Sk className="h-3 w-12" /></div><div className="space-y-1.5"><Sk className="ml-auto h-3 w-24" /><Sk className="ml-auto h-2.5 w-16" /></div></div>
       </div>
     </li>
   );

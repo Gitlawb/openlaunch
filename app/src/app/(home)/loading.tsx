@@ -38,17 +38,16 @@ export default function Loading() {
       </div>
       <div className="grid xl:grid-cols-[minmax(0,1fr)_17rem] gap-6 items-start">
         <section className="min-w-0">
-          <div className="flex h-12 items-center gap-6 border-b border-line">
-            <Sk className="h-4 w-24" /><Sk className="h-4 w-28" />
+          <div className="flex flex-col items-start justify-between gap-4 border-t border-line pb-5 pt-6 sm:flex-row sm:items-end">
+            <div className="space-y-2"><Sk className="h-2.5 w-20" /><Sk className="h-7 w-64 max-w-full" /><Sk className="h-3 w-72 max-w-full" /></div>
+            <Sk className="h-12 w-52 max-w-full rounded-xl" />
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 py-1.5 sm:flex sm:gap-2">
-            <Sk className="col-span-2 h-11 w-full min-w-0 rounded-lg sm:min-w-36 sm:flex-1 sm:basis-40" /><Sk className="h-11 w-28 shrink-0 rounded-lg" /><Sk className="h-11 w-24 shrink-0 rounded-lg" />
+          <div className="market-toolbar grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pb-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+            <Sk className="col-span-2 h-11 w-full min-w-0 rounded-xl sm:col-span-1" /><Sk className="h-11 w-28 shrink-0 rounded-xl" /><Sk className="h-11 w-24 shrink-0 rounded-xl" />
           </div>
-          <div className="flex h-11 items-center gap-6 overflow-hidden border-b border-line">
-            {[0, 1, 2, 3, 4, 5].map((i) => <Sk key={i} className="h-3 w-12 shrink-0" />)}
-          </div>
-          <div className="flex h-8 items-center justify-between gap-3">
-            <Sk className="h-2.5 w-28" /><Sk className="h-2.5 w-24" />
+          <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 pb-3">
+            <div className="flex gap-2 overflow-hidden">{[0, 1, 2, 3, 4, 5].map((i) => <Sk key={i} className="h-9 w-16 shrink-0 rounded-lg" />)}</div>
+            <Sk className="h-3 w-36" />
           </div>
           <LaunchListHeader window="all" />
           <ul>

@@ -8,7 +8,8 @@
 .welcomeMain h2 { margin-top: 12px; color: var(--color-ink); font-size: 36px; font-weight: 600; line-height: 1.15; letter-spacing: -.04em; }
 .welcomeMain h2 span { color: var(--color-muted); }
 .welcomeCopy { max-width: 340px; margin-top: 20px; font-size: 14px; line-height: 1.75; text-wrap: pretty; }
-.connectButton, .outlineButton, .quietButton, .refresh { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 10px 16px; border-radius: 8px; color: var(--color-ink); background: var(--color-line); font-size: 13px; font-weight: 600; cursor: pointer; transition: color 160ms, background-color 160ms; }
+.connectButton, .outlineButton, .quietButton, .refresh { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 10px 16px; border-radius: 8px; color: var(--color-ink); background: var(--color-line); font-size: 13px; font-weight: 600; cursor: pointer; transition: color 160ms, background-color 160ms, transform 160ms; }
+.dashboard :is(.connectButton, .outlineButton, .quietButton, .refresh):active:not(:disabled) { transform: scale(.98); }
 .connectButton { margin-top: 28px; background: var(--color-ink); color: var(--color-inverse); padding-inline: 20px; }
 .connectButton:hover:not(:disabled) { background: var(--color-body); }
 .outlineButton:hover:not(:disabled), .refresh:hover:not(:disabled) { background: var(--color-line-strong); }
@@ -31,12 +32,25 @@
 .disclosure p { max-width: 560px; text-align: right; text-wrap: pretty; }
 .walletBar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 20px; border-top: 1px solid var(--color-line); }
 .identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.walletIcon { display: grid; place-items: center; width: 32px; height: 44px; color: var(--color-muted); }
+.identity > svg { flex-shrink: 0; }
 .identity p { font-size: 11px; color: var(--color-muted); margin-bottom: 2px; }
 .address { font-family: var(--font-mono); font-size: 13px; color: var(--color-ink); }
 .walletUtilities { display: flex; align-items: center; gap: 16px; }
 .updateNote { font-size: 11px; color: var(--color-muted); }
-.refresh { padding-inline: 14px; font-size: 12px; }
+.refresh { min-width: 112px; padding-inline: 14px; font-size: 12px; }
+.refresh[data-refreshed] { color: var(--color-up); }
+.collectionProgress { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; padding-block: 18px; margin-bottom: 12px; border-block: 1px solid var(--color-line); }
+.collectionProgress > div { display: flex; align-items: center; gap: 12px; }
+.progressMarker { display: grid; place-items: center; width: 24px; flex-shrink: 0; color: var(--color-brand); }
+.collectionProgress strong { display: block; color: var(--color-ink); font-size: 13px; font-weight: 500; }
+.collectionProgress p > span { display: block; margin-top: 4px; color: var(--color-muted); font-size: 12px; line-height: 1.65; }
+.collectionProgress ol { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.collectionProgress li { display: flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 11px; }
+.collectionProgress li > span { font-variant-numeric: tabular-nums; }
+.collectionProgress li[data-active] { color: var(--color-ink); }
+.collectionProgress li[data-active] > span { color: var(--color-brand); }
+.collectionProgress[data-stage="confirmed"] .progressMarker { color: var(--color-up); }
+.collectionProgress[data-stage="failed"] .progressMarker { color: var(--color-down-ink); }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; padding-bottom: 28px; border-bottom: 1px solid var(--color-line); }
 .stat { min-width: 0; padding-block: 16px; }
 .stat dt { color: var(--color-muted); font-size: 12px; }
@@ -123,7 +137,6 @@
   .tabsList { gap: 20px; }
   .tabCount { display: none; }
   .walletBar { gap: 8px; }
-  .walletIcon { display: none; }
   .refresh { padding-inline: 12px; }
   .stats, .loadingStats { gap: 12px 24px; }
   .stat dd:not(.statHint) { font-size: 19px; }
@@ -132,4 +145,5 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .dashboard *, .dashboard *::before, .dashboard *::after { transition: none !important; }
+  .dashboard :is(.connectButton, .outlineButton, .quietButton, .refresh):active:not(:disabled) { transform: none; }
 }

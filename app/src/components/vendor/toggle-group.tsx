@@ -14,5 +14,5 @@ export function ToggleGroup({ className, ...props }: ToggleGroupPrimitive.Props)
 }
 
 export function ToggleGroupItem({ className, ...props }: TogglePrimitive.Props) {
-  return <TogglePrimitive data-slot="toggle" className={cn("inline-flex min-h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium whitespace-nowrap text-muted transition-colors hover:bg-card hover:text-ink data-pressed:bg-line data-pressed:text-ink disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none", className)} {...props} />;
+  return <TogglePrimitive data-slot="toggle" className={cn("ui-pressable inline-flex min-h-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium whitespace-nowrap text-muted hover:bg-card hover:text-ink data-pressed:bg-line data-pressed:text-ink disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none", className)} {...props} />;
 }

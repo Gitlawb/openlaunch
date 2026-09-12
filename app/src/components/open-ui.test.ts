@@ -37,14 +37,15 @@ test("secondary filters remain accessible and active filtering is visible outsid
   assert.match(list, /s\.key === "new"/);
 });
 
-test("tablet rows use four aligned tracks before the full six-column desktop ledger", () => {
+test("tablet rows use three decision tracks before the four-column desktop market tape", () => {
   const css = source("../app/globals.css");
   assert.match(css, /@media \(min-width: 640px\) \{\s*\.launch-ledger/);
   assert.match(css, /@media \(min-width: 1024px\) \{\s*\.launch-ledger/);
   const row = source("./launchpad/LaunchRow.tsx");
   assert.match(row, /hidden sm:grid/);
-  assert.match(row, /col-span-2 grid[^"\n]+sm:hidden/);
-  assert.doesNotMatch(row.match(/<dl className=[^>]+>/)?.[0] ?? "", /border/);
+  assert.match(row, /styles\.mobileMetrics/);
+  assert.match(row, /hidden lg:block/);
+  assert.doesNotMatch(row.match(/<dl className=[^>]+>/)?.[0] ?? "", /border-/);
 });
 
 test("shared toggles have individually selected states without an enclosing tray", () => {

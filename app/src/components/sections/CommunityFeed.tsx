@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Component, createRef, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowUpRight, MessageSquare, RefreshCw, Search, Signature, X } from "lucide-react";
+import { ArrowRight, ArrowUp, ArrowUpRight, MessageSquare, RefreshCw, Search, Signature, X } from "lucide-react";
 import ChainSelector from "@/components/launchpad/ChainSelector";
 import TokenAvatar from "@/components/launchpad/TokenAvatar";
 import WalletAvatar from "@/components/WalletAvatar";
@@ -11,9 +11,45 @@ import { useLive } from "@/components/launchpad/LiveProvider";
 import { CHAIN_SHORT, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { ago, nowMs } from "@/lib/launchpad/time";
 import type { PostRow } from "@/lib/launchpad/postsServer";
-import { communityFingerprint, filterCommunityPosts } from "@/lib/launchpad/community-feed";
+import { communityFingerprint, filterCommunityPosts, reconcileCommunityWindow } from "@/lib/launchpad/community-feed";
 import shell from "./SectionShell.module.css";
 import styles from "./CommunityFeed.module.css";
+
+type ScrollAnchorProps = { children: ReactNode; revision: object; filterKey: string; rowIds: number[]; preservePosition: boolean };
+type ScrollAnchor = { id: string; top: number } | null;
+
+// getSnapshotBeforeUpdate reads the old DOM immediately before React changes it.
+// A layout-effect read is too late to preserve the reader after an edited or
+// moderated row changes height. Keep this lifecycle boundary local to the feed.
+class FeedScrollAnchor extends Component<ScrollAnchorProps> {
+  private list = createRef<HTMLDivElement>();
+
+  getSnapshotBeforeUpdate(previous: ScrollAnchorProps): ScrollAnchor {
+    if (!this.props.preservePosition || previous.revision === this.props.revision || previous.filterKey !== this.props.filterKey) return null;
+    const surviving = new Set(this.props.rowIds.map(String));
+    const rows = this.list.current?.querySelectorAll<HTMLElement>("[data-post-id]");
+    if (!rows) return null;
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      // The header occupies the top 80px; choose the first surviving reading row.
+      if (surviving.has(row.dataset.postId!) && rect.bottom > 80 && rect.top < window.innerHeight) {
+        return { id: row.dataset.postId!, top: rect.top };
+      }
+    }
+    return null;
+  }
+
+  componentDidUpdate(_previous: ScrollAnchorProps, _state: unknown, anchor: ScrollAnchor) {
+    if (!anchor) return;
+    const row = this.list.current?.querySelector<HTMLElement>(`[data-post-id="${anchor.id}"]`);
+    if (row) {
+      const delta = row.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(delta) > .5) window.scrollBy({ top: delta, behavior: "instant" });
+    }
+  }
+
+  render() { return <div id="community-posts" ref={this.list}>{this.props.children}</div>; }
+}
 
 export default function CommunityFeed({ initial, loadError = false }: { initial: PostRow[]; loadError?: boolean }) {
   const router = useRouter();
@@ -22,8 +58,31 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
   const [query, setQuery] = useState("");
   const [now, setNow] = useState(0);
   const [refreshing, startTransition] = useTransition();
+  const [readingDown, setReadingDown] = useState(false);
+  const [feed, setFeed] = useState(() => ({ source: initial, ...reconcileCommunityWindow<PostRow>({ visible: [], pending: [] }, initial, false) }));
+  const [entering, setEntering] = useState<number[]>([]);
+  const entryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedStart = useRef<HTMLDivElement>(null);
   const observed = useRef(communityFingerprint(initial));
   const fullWindowRefresh = useRef(0);
+  // Reconcile before committing the new server payload. A failed load is not an
+  // authoritative empty window. Filters remain local and are never reset here.
+  if (!loadError && initial !== feed.source) {
+    setFeed({ source: initial, ...reconcileCommunityWindow(feed, initial, readingDown || feed.pending.length > 0) });
+  }
+
+  useEffect(() => {
+    const updateReadingPosition = () => setReadingDown((feedStart.current?.getBoundingClientRect().top ?? 0) < 80);
+    updateReadingPosition();
+    window.addEventListener("scroll", updateReadingPosition, { passive: true });
+    window.addEventListener("resize", updateReadingPosition);
+    return () => {
+      window.removeEventListener("scroll", updateReadingPosition);
+      window.removeEventListener("resize", updateReadingPosition);
+    };
+  }, []);
+
+  useEffect(() => () => { if (entryTimer.current) clearTimeout(entryTimer.current); }, []);
   // Keep the server's 100-row window. A changed shared snapshot is a refresh
   // signal, not a replacement with the poller's shorter 30-row window.
   useEffect(() => {
@@ -44,9 +103,18 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
     return () => { clearTimeout(timer); unsubscribe(); };
   }, [initial, router, subscribe]);
 
-  const shown = filterCommunityPosts(initial, chain, query);
+  const shown = filterCommunityPosts(feed.visible, chain, query);
+  const pending = filterCommunityPosts(feed.pending, chain, query);
   const filtered = Boolean(chain || query.trim());
   function reset() { setChain(null); setQuery(""); }
+  function showNewPosts() {
+    setEntering(pending.map((post) => post.id));
+    if (entryTimer.current) clearTimeout(entryTimer.current);
+    // Clear even when reduced motion disables animationend, so changing a filter
+    // later cannot replay an old batch's entrance.
+    entryTimer.current = setTimeout(() => setEntering([]), 250);
+    setFeed({ source: feed.source, ...reconcileCommunityWindow(feed, feed.source, false) });
+  }
 
   return <div className={styles.layout}>
     <section className={shell.panel} aria-label="Recent community posts" aria-busy={refreshing}>
@@ -65,16 +133,22 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
       </div>
       <div className={styles.resultLine}><p role="status">{refreshing ? "Refreshing posts…" : loadError ? "Feed unavailable" : <><span>{shown.length}</span> {filtered ? "matching" : "recent"} {shown.length === 1 ? "post" : "posts"}</>}</p><span>Token-page conversations</span></div>
       </header>
+      <div ref={feedStart} className={styles.feedStart} />
+      {!loadError && pending.length > 0 && shown.length > 0 ? <div className={styles.newPostsSlot}>
+        <button type="button" className={styles.newPosts} onClick={showNewPosts} aria-controls="community-posts"><ArrowUp size={14} aria-hidden="true" />{pending.length} new {pending.length === 1 ? "post" : "posts"}<span className={styles.newPostsAction}>Show</span></button>
+        <span className="sr-only" role="status">{pending.length} new {pending.length === 1 ? "post is" : "posts are"} available in this view.</span>
+      </div> : null}
+      <FeedScrollAnchor revision={feed} filterKey={`${chain ?? ""}:${query}`} rowIds={loadError ? [] : shown.map((post) => post.id)} preservePosition={readingDown}>
       {loadError ? <div className={styles.empty}>
         <MessageSquare size={30} aria-hidden="true" className={styles.emptyIcon} /><h3>The feed couldn’t load.</h3><p>Your connection or the indexer may be unavailable. You can retry without connecting a wallet.</p><button type="button" className={shell.action} disabled={refreshing} onClick={() => startTransition(() => router.refresh())}>Try again <RefreshCw size={14} aria-hidden="true" /></button>
       </div> : shown.length === 0 ? <div className={styles.empty}>
         <MessageSquare size={30} aria-hidden="true" className={styles.emptyIcon} />
-        <h3>{filtered ? "No matching conversations." : "The next conversation starts with you."}</h3>
-        <p className={styles.emptyEyebrow}>{filtered ? "Nothing in this view" : "Room for a first word"}</p>
-        <p>{filtered ? "Try another chain or search term. Search covers only the recent posts loaded here." : "Open a token, head to Conversation, and add your perspective. Holders, traders and creators can post with a free wallet signature."}</p>
-        {filtered ? <button type="button" onClick={reset} className={shell.action}>Clear filters <X size={14} aria-hidden="true" /></button> : <Link href="/#launches" className={shell.action}>Find a token <ArrowRight size={15} aria-hidden="true" /></Link>}
+        <h3>{pending.length ? "New conversations are ready." : filtered ? "No matching conversations." : "The next conversation starts with you."}</h3>
+        <p className={styles.emptyEyebrow}>{pending.length ? "Ready when you are" : filtered ? "Nothing in this view" : "Room for a first word"}</p>
+        <p>{pending.length ? `${pending.length} new ${pending.length === 1 ? "post is" : "posts are"} waiting in this view. Your filters will stay the same.` : filtered ? "Try another chain or search term. Search covers only the recent posts loaded here." : "Open a token, head to Conversation, and add your perspective. Holders, traders and creators can post with a free wallet signature."}</p>
+        {pending.length ? <button type="button" onClick={showNewPosts} className={shell.action}>Show new posts <ArrowUp size={14} aria-hidden="true" /></button> : filtered ? <button type="button" onClick={reset} className={shell.action}>Clear filters <X size={14} aria-hidden="true" /></button> : <Link href="/#launches" className={shell.action}>Find a token <ArrowRight size={15} aria-hidden="true" /></Link>}
       </div> : <ol className={styles.posts} aria-label="Posts, newest first">
-        {shown.map((post) => <li key={post.id}>
+        {shown.map((post) => <li key={post.id} data-post-id={post.id} className={entering.includes(post.id) ? styles.postEntering : undefined}>
           <article className={styles.post}>
             <Link href={`/t/${post.chain}/${post.token}#comments`} className={styles.postLink}>
               <div className={styles.postHeading}>
@@ -101,6 +175,7 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
           </article>
         </li>)}
       </ol>}
+      </FeedScrollAnchor>
       <div className={styles.feedFoot}>Showing up to 100 recent posts. Read the full thread on its token page.</div>
     </section>
 
