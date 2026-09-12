@@ -100,7 +100,7 @@ export default function CollectPanel({
   const myClaimable = (mine.data as bigint | undefined) ?? 0n;
 
   return (
-    <section className="rounded-2xl bg-paper border border-line p-5 space-y-3">
+    <section className="space-y-4 border-t border-line pt-5">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">Where the fees go</h2>
         <span className="font-mono font-bold text-ink tnum">{pipsToPct(lpFee)}</span>
@@ -131,15 +131,15 @@ export default function CollectPanel({
               );
             })}
           </ul>
-          <dl className="grid grid-cols-2 gap-2 pt-1">
-            <div className="rounded-xl bg-paper border border-line px-3 py-2.5">
+          <dl className="grid grid-cols-2 gap-4 border-y border-line py-4">
+            <div className="min-w-0 space-y-1">
               <dt className="text-[11px] text-muted">{isBurnOnly ? "Burned so far" : "Collected so far"}</dt>
-              <dd className="font-mono font-bold text-sm tnum text-ink">{fq(isBurnOnly ? burned : collected)}</dd>
+              <dd className="break-words font-mono font-bold text-sm tnum text-ink">{fq(isBurnOnly ? burned : collected)}</dd>
               {usd(isBurnOnly ? burned : collected) ? <dd className="text-[11px] font-mono text-muted tnum">{usd(isBurnOnly ? burned : collected)}</dd> : null}
             </div>
-            <div className="rounded-xl bg-paper border border-line px-3 py-2.5">
+            <div className="min-w-0 space-y-1 border-l border-line pl-4">
               <dt className="text-[11px] text-muted">{isBurnOnly ? `${symbol} burned` : "Burned"}</dt>
-              <dd className="font-mono font-bold text-sm tnum text-warm-ink">{isBurnOnly ? fmtTokens(BigInt(burnedToken)) : fq(burned)}</dd>
+              <dd className="break-words font-mono font-bold text-sm tnum text-warm-ink">{isBurnOnly ? fmtTokens(BigInt(burnedToken)) : fq(burned)}</dd>
               {!isBurnOnly ? <dd className="text-[11px] font-mono text-muted tnum">to people: {fq(toPeople)}</dd> : null}
             </div>
           </dl>
@@ -159,7 +159,7 @@ export default function CollectPanel({
         </>
       )}
       {phase.k === "error" ? (
-        <p className="rounded-xl bg-down-soft border border-down/20 text-down-ink text-xs px-3 py-2" role="alert">
+        <p className="rounded-lg bg-down-soft text-down-ink text-xs px-3 py-2" role="alert">
           {phase.message}
         </p>
       ) : null}

@@ -10,7 +10,7 @@ import ImageUpload from "./ImageUpload";
 import FeeChip from "./FeeChip";
 import GitlawbBadge from "./GitlawbBadge";
 import { toast } from "./TxToasts";
-import { btn, card, helper, input, label } from "@/components/ui";
+import { btn, helper, input, label } from "@/components/ui";
 import { ERC20_MIN_ABI, ERC20_TRANSFER_EVENT, LAUNCH_FACTORY_ABI, PERMIT2_ABI, UNIVERSAL_ROUTER_ABI, V4_QUOTER_ABI } from "@/lib/launchpad/abi";
 import { BPS, DEFAULT_SUPPLY, FEE_PRESETS, TICK_SPACING, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
 import { capChipLabel, capDisplay, capEntry, capPick, capPresets, capToQuote } from "@/lib/launchpad/market-cap";
@@ -372,21 +372,21 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
 
 
   return (
-    <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem] gap-6 lg:gap-8 items-start">
+    <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_22rem] xl:gap-16">
       <form
-        className="space-y-6 min-w-0"
+        className="min-w-0 divide-y divide-line"
         onSubmit={(e) => {
           e.preventDefault();
           void launch();
         }}
       >
         {/* chain + quote */}
-        <section className={`${card} p-5 space-y-4`}>
+        <section className="space-y-5 pb-8">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-ink">Chain</h2>
+            <h2 className="text-base font-semibold text-ink">Chain</h2>
             <span className="text-xs text-muted">same contracts, same rules, on both</span>
           </div>
-          <div className="grid sm:grid-cols-2 gap-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             {CHAIN_KEYS.map((k) => {
               const active = chain === k;
               const ok = launchpad(k).configured;
@@ -406,11 +406,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                     setMcapPick(null);
                     setCustomMcap("");
                   }}
-                  className={`text-left rounded-xl border p-3.5 transition-colors disabled:opacity-40 ${active ? "border-brand bg-brand-soft" : "border-line-strong bg-card hover:border-ink/40"}`}
+                  className={`border-b-2 px-3 py-3 text-left transition-colors disabled:opacity-40 ${active ? "border-brand bg-brand-soft" : "border-line hover:border-line-strong hover:bg-card"}`}
                   aria-pressed={active}
                 >
                   <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{CHAIN_LABELS[k]}</div>
-                  <div className="text-xs text-body mt-0.5 leading-snug">{k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : ok ? "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents." : "Coming soon."}</div>
+                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : ok ? "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents." : "Coming soon."}</div>
                 </button>
               );
             })}
@@ -419,7 +419,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
           {cfg.quotes.length > 0 ? (
             <div className="flex items-center gap-2 flex-wrap">
               <span className={label}>Priced in</span>
-              <div className="flex items-center rounded-full border border-line bg-card p-0.5" role="group" aria-label="quote asset">
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="quote asset">
                 {[...cfg.quotes.map((q) => ({ key: q.key, label: q.symbol })), { key: "stock" as const, label: "Stock" }].map((q) => (
                   <button
                     key={q.key}
@@ -429,7 +429,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       setMcapPick(null);
                       setCustomMcap("");
                     }}
-                    className={`h-8 px-3 rounded-full text-xs font-mono font-bold ${quoteKey === q.key ? "bg-ink text-inverse" : "text-body hover:text-ink"}`}
+                    className={`min-h-11 rounded-lg px-3 text-xs font-mono font-bold ${quoteKey === q.key ? "bg-ink text-inverse" : "text-body hover:bg-card hover:text-ink"}`}
                     aria-pressed={quoteKey === q.key}
                   >
                     {q.label}
@@ -448,7 +448,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
           ) : null}
           {quoteKey === "gitlawb" ? (
             <div className="space-y-2">
-              <span className="inline-flex items-center gap-2 h-9 pl-1.5 pr-3 rounded-full border border-brand bg-brand-soft text-brand text-sm font-semibold">
+              <span className="inline-flex flex-wrap items-center gap-2 py-2 text-brand text-sm font-semibold">
                 {quote.logo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={quote.logo} alt="" width={22} height={22} className="rounded-md" />
@@ -467,7 +467,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             <div className="space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 {stock ? (
-                  <span className="inline-flex items-center gap-2 h-9 pl-1.5 pr-3 rounded-full border border-brand bg-brand-soft text-brand text-sm font-semibold">
+                  <span className="inline-flex flex-wrap items-center gap-2 py-2 text-brand text-sm font-semibold">
                     {stock.logo ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={stock.logo} alt="" width={22} height={22} className={`${stock.logo.startsWith("data:") ? "rounded-md" : "rounded-full"} bg-card`} referrerPolicy="no-referrer" />
@@ -518,7 +518,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                           setMcapPick(null);
                           setCustomMcap("");
                         }}
-                        className="inline-flex items-center gap-1.5 h-8 pl-1.5 pr-2.5 rounded-full border border-line bg-card text-xs font-semibold text-ink hover:border-ink/40"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-card pl-2 pr-3 text-xs font-semibold text-ink hover:bg-line"
                         title={h.name}
                       >
                         {h.logo ? (
@@ -539,8 +539,8 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         </section>
 
         {/* identity */}
-        <section className={`${card} p-5 space-y-4`}>
-          <h2 className="text-sm font-semibold text-ink">Token</h2>
+        <section className="space-y-5 py-8">
+          <h2 className="text-base font-semibold text-ink">Token</h2>
           <div className="grid sm:grid-cols-[minmax(0,1fr)_9rem] gap-4">
             <div>
               <label className={label} htmlFor="name">
@@ -585,9 +585,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         </section>
 
         {/* price */}
-        <section className={`${card} p-5 space-y-4`}>
+        <section className="space-y-5 py-8">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-ink">Starting market cap</h2>
+            <h2 className="text-base font-semibold text-ink">Starting market cap</h2>
             <span className="text-xs text-muted">1,000,000,000 supply · all of it in the pool</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -601,7 +601,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                     setMcapPick(v);
                     setCustomMcap("");
                   }}
-                  className={`h-11 px-4 rounded-xl border font-mono text-sm font-bold tnum ${active ? "bg-ink text-inverse border-ink" : "bg-card text-ink border-line-strong hover:border-ink/40"}`}
+                  className={`min-h-11 rounded-lg px-4 font-mono text-sm font-bold tnum ${active ? "bg-ink text-inverse" : "bg-card text-body hover:bg-line hover:text-ink"}`}
                 >
                   {capChipLabel(v, entry, quote)}
                 </button>
@@ -629,9 +629,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         </section>
 
         {/* fees */}
-        <section className={`${card} p-5 space-y-4`}>
+        <section className="space-y-5 py-8">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-ink">Trading fee</h2>
+            <h2 className="text-base font-semibold text-ink">Trading fee</h2>
             <span className="text-xs text-up font-medium">Platform fee: 0, always</span>
           </div>
           <div className="grid sm:grid-cols-3 gap-2">
@@ -645,11 +645,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                     setFeePips(f.pips);
                     if (f.pips === 0) setBeneficiary("burn");
                   }}
-                  className={`text-left rounded-xl border p-3.5 transition-colors ${active ? "border-brand bg-brand-soft" : "border-line-strong bg-card hover:border-ink/40"}`}
+                  className={`border-b-2 px-3 py-3 text-left transition-colors ${active ? "border-brand bg-brand-soft" : "border-line hover:border-line-strong hover:bg-card"}`}
                   aria-pressed={active}
                 >
                   <div className={`font-mono font-bold text-lg tnum ${active ? "text-brand" : "text-ink"}`}>{f.label}</div>
-                  <div className="text-xs text-body mt-0.5 leading-snug">{f.blurb}</div>
+                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{f.blurb}</div>
                 </button>
               );
             })}
@@ -672,11 +672,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       type="button"
                       key={o.k}
                       onClick={() => setBeneficiary(o.k)}
-                      className={`text-left rounded-xl border p-3.5 transition-colors ${active ? "border-brand bg-brand-soft" : "border-line-strong bg-card hover:border-ink/40"}`}
+                      className={`border-b-2 px-3 py-3 text-left transition-colors ${active ? "border-brand bg-brand-soft" : "border-line hover:border-line-strong hover:bg-card"}`}
                       aria-pressed={active}
                     >
                       <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{o.t}</div>
-                      <div className="text-xs text-body mt-0.5 leading-snug">{o.d}</div>
+                      <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{o.d}</div>
                     </button>
                   );
                 })}
@@ -692,9 +692,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         </section>
 
         {/* submit */}
-        <section className={`${card} p-5 space-y-4`}>
+        <section className="space-y-5 py-8">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-ink">
+            <h2 className="text-base font-semibold text-ink">
               First buy <span className="font-normal text-muted">· {buySource === "suggested" ? "suggested" : "optional"}</span>
             </h2>
             <span className="text-xs text-muted">a second transaction, right after the launch confirms</span>
@@ -707,7 +707,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                   type="button"
                   key={v}
                   onClick={() => (active ? declineFirstBuy() : chooseFirstBuy(v))}
-                  className={`h-11 px-4 rounded-xl border font-mono text-sm font-bold tnum ${active ? "bg-ink text-inverse border-ink" : "bg-card text-ink border-line-strong hover:border-ink/40"}`}
+                  className={`min-h-11 rounded-lg px-4 font-mono text-sm font-bold tnum ${active ? "bg-ink text-inverse" : "bg-card text-body hover:bg-line hover:text-ink"}`}
                 >
                   {fmtQuoteUnits(Number(v), quote.decimals)} {quote.symbol}
                 </button>
@@ -748,9 +748,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
           <p className={helper}>Other traders can buy before you. First-buy slippage tolerance: {FIRST_BUY_SLIPPAGE_BPS / 100}%. Network gas and pool fees apply.</p>
         </section>
 
-        <section className={`${card} p-5 space-y-3`}>
+        <section className="space-y-4 pt-8">
           {quoteKey === "stock" && !stock ? (
-            <div className="rounded-xl border border-warm/40 bg-warm-soft px-3.5 py-2.5 text-xs text-warm-ink font-semibold" role="status">
+            <div className="rounded-lg bg-warm-soft px-3.5 py-2.5 text-xs text-warm-ink font-semibold" role="status">
               {STOCK_PICK_MESSAGE}
             </div>
           ) : null}
@@ -784,10 +784,10 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
       </form>
 
       {/* preview */}
-      <aside className="lg:sticky lg:top-20 space-y-4 min-w-0 order-first lg:order-none">
-        <div className={`${card} p-4`}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Preview</p>
-          <div className="mt-3 flex items-center gap-3">
+      <aside className="min-w-0 space-y-6 border-t border-line pt-6 lg:sticky lg:top-24 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+        <div>
+          <h2 className="text-base font-semibold text-ink">Preview</h2>
+          <div className="mt-5 flex items-center gap-3">
             <TokenAvatar chain={chain} token={`0x${symbolClean || "token"}`} symbol={symbolClean || "?"} image={/^https:\/\//.test(image.trim()) ? image.trim() : null} size={48} />
             <div className="min-w-0">
               <div className="font-semibold text-ink truncate">{name.trim() || "Your token"}</div>
@@ -799,14 +799,14 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             </div>
           </div>
           {description.trim() ? <p className="mt-3 text-sm text-body line-clamp-3">{description.trim()}</p> : null}
-          <dl className="mt-4 grid grid-cols-2 gap-2">
+          <dl className="mt-5 grid grid-cols-2 gap-x-5 border-b border-line">
             <Mini k="Opens at" v={fdvPreview !== null ? cap(fdvPreview).main : "—"} sub={fdvPreview !== null ? cap(fdvPreview).detail : CHAIN_LABELS[chain]} />
             <Mini k="First buy" v={initialBuyRaw ? `${initialBuy.trim()} ${quote.symbol}` : "none"} sub={buyPreview ? `${buySource === "suggested" ? "suggested · " : ""}~${fmtPct(buyPreview.pctOfSupply)} of supply` : "pool opens untouched"} />
             <Mini k="Trading fee" v={FEE_PRESETS.find((f) => f.pips === feePips)?.label ?? "—"} sub={feePips === 0 ? "free pool" : beneficiary === "burn" ? "burned" : "to beneficiary"} />
             <Mini k="Platform fee" v="0" sub="always" accent />
           </dl>
         </div>
-        <ul className="text-[13px] text-body space-y-2 px-1">
+        <ul className="space-y-4 text-[13px] leading-relaxed text-body">
           {[
             ["Deploys a plain ERC-20", "no mint, no pause, no blacklist, no tax"],
             ["Opens a Uniswap v4 pool", `${quote.symbol} / your token on ${CHAIN_LABELS[chain]}, no hook`],
@@ -829,7 +829,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
 
 function Mini({ k, v, sub, accent }: { k: string; v: string; sub?: string | null; accent?: boolean }) {
   return (
-    <div className="rounded-xl bg-paper border border-line px-3 py-2.5 min-w-0">
+    <div className="min-w-0 space-y-1 border-t border-line py-4">
       <dt className="text-[11px] text-muted truncate">{k}</dt>
       <dd className={`font-mono font-bold text-sm tnum truncate ${accent ? "text-up" : "text-ink"}`}>{v}</dd>
       {sub ? <dd className="text-[11px] text-muted truncate">{sub}</dd> : null}
@@ -905,7 +905,7 @@ function SubmitButton({
 function PhaseNote({ phase, chain }: { phase: Phase; chain: ChainKey }) {
   if (phase.k === "error")
     return (
-      <p className="rounded-xl bg-down-soft border border-down/20 text-down-ink text-sm px-3 py-2" role="alert">
+      <p className="rounded-lg bg-down-soft text-down-ink text-sm px-3 py-2" role="alert">
         {phase.message}
       </p>
     );

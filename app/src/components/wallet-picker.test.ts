@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const picker = readFileSync(new URL("./WalletPicker.tsx", import.meta.url), "utf8");
 const button = readFileSync(new URL("./ConnectWallet.tsx", import.meta.url), "utf8");
-const src = new URL("../", import.meta.url).pathname;
+const src = fileURLToPath(new URL("../", import.meta.url));
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -19,7 +20,7 @@ function walk(dir: string, out: string[] = []): string[] {
 // Source contracts: the picker is the only place that chooses a connector or calls connect().
 test("every connect entry point goes through the shared picker; nothing else touches useConnect", () => {
   const users = walk(src).filter((p) => /useConnect\b|connectors\[0\]|c\.id === "coinbaseWallet"/.test(readFileSync(p, "utf8")));
-  assert.deepEqual(users.map((p) => p.slice(src.length)), ["components/WalletPicker.tsx"]);
+  assert.deepEqual(users.map((p) => relative(src, p).replaceAll("\\", "/")), ["components/WalletPicker.tsx"]);
   for (const file of ["components/ConnectButton.tsx", "components/launchpad/Posts.tsx", "components/launchpad/TradePanel.tsx", "components/launchpad/MeDashboard.tsx"]) {
     assert.match(readFileSync(join(src, file), "utf8"), /<ConnectWallet className=/, file);
   }

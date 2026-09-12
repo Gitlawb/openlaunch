@@ -9,7 +9,7 @@ import ts from "typescript";
  * real wallet, RPC, or transaction while checking async control flow rather
  * than testing a duplicate implementation of the transaction logic.
  */
-function handler(file: string, name: string, bindings: Record<string, unknown>): (...args: unknown[]) => Promise<void> {
+function handler(file: string, name: string, bindings: Record<string, unknown>): (...args: unknown[]) => Promise<unknown> {
   const source = readFileSync(new URL(file, import.meta.url), "utf8");
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let declaration = "";
@@ -96,22 +96,117 @@ for (const status of ["reverted", "success"]) {
   test(`dashboard collection handles a ${status} receipt honestly and clears busy state`, async () => {
     const effects: string[] = [];
     const busyStates: (string | null)[] = [];
+    const stages: string[] = [];
+    const mounted = { current: true };
+    const collecting = { current: false };
     const collect = handler("./MeDashboard.tsx", "collect", {
+      mounted, collecting,
       address: "wallet", config: {}, CHAINS: { base: { id: 8453 } },
       launchpad: () => ({ locker: "locker" }), key: () => "base:token",
       LAUNCH_LOCKER_ABI: [], BUILDER_DATA_SUFFIX: "0x",
       setBusy: (value: string | null) => busyStates.push(value),
+      setCollection: (value: { stage: string }) => stages.push(value.stage),
       getPublicClient: () => ({ simulateContract: async () => ({ request: {} }), waitForTransactionReceipt: async () => ({ status }) }),
       getWalletClient: async () => ({ writeContract: async () => "0xhash" }),
       fetch: async () => { effects.push("sync"); }, load: async () => { effects.push("reload"); },
       isBurnOnly: () => false, friendlyError: (error: Error) => error.message,
       toast: (message: { kind: string }) => effects.push(message.kind === "collect" ? "success toast" : "failure toast"),
     });
-    await collect({ chain: "base", token: "token", token_id: 1, symbol: "TEST", recipients: [] });
+    assert.equal(await collect({ chain: "base", token: "token", token_id: 1, symbol: "TEST", recipients: [] }), status === "success");
     assert.deepEqual(effects, status === "success" ? ["sync", "success toast", "reload"] : ["failure toast"]);
     assert.deepEqual(busyStates, ["base:token", null]);
+    assert.equal(collecting.current, false);
+    assert.deepEqual(stages, status === "success" ? ["checking", "signing", "confirming", "syncing", "confirmed"] : ["checking", "signing", "confirming", "failed"]);
   });
 }
+
+for (const unmountAt of ["wallet", "simulation", "receipt", "reload"] as const) {
+  test(`dashboard account change during ${unmountAt} stops later account-scoped actions`, async () => {
+    const mounted = { current: true };
+    const collecting = { current: false };
+    const effects: string[] = [];
+    const stateAfterUnmount: string[] = [];
+    const update = (name: string) => { if (!mounted.current) stateAfterUnmount.push(name); };
+    const collect = handler("./MeDashboard.tsx", "collect", {
+      mounted, collecting, address: "old-wallet", config: {}, CHAINS: { base: { id: 8453 } },
+      launchpad: () => ({ locker: "locker" }), key: () => "base:token",
+      LAUNCH_LOCKER_ABI: [], BUILDER_DATA_SUFFIX: "0x",
+      setBusy: () => update("busy"), setCollection: () => update("collection"),
+      getWalletClient: async () => {
+        if (unmountAt === "wallet") mounted.current = false;
+        return { writeContract: async () => { effects.push("sign"); return "0xhash"; } };
+      },
+      getPublicClient: () => ({
+        simulateContract: async () => { effects.push("simulate"); if (unmountAt === "simulation") mounted.current = false; return { request: {} }; },
+        waitForTransactionReceipt: async () => { effects.push("receipt"); if (unmountAt === "receipt") mounted.current = false; return { status: "success" }; },
+      }),
+      fetch: async () => effects.push("sync"), load: async () => { effects.push("reload"); if (unmountAt === "reload") mounted.current = false; },
+      toast: () => effects.push("toast"), isBurnOnly: () => false, friendlyError: (error: Error) => error.message,
+    });
+    assert.equal(await collect({ chain: "base", token: "token", token_id: 1, symbol: "TEST", recipients: [] }), false);
+    assert.deepEqual(effects, unmountAt === "wallet" ? [] : unmountAt === "simulation" ? ["simulate"] : unmountAt === "receipt" ? ["simulate", "sign", "receipt"] : ["simulate", "sign", "receipt", "sync", "toast", "reload"]);
+    assert.deepEqual(stateAfterUnmount, []);
+    assert.equal(collecting.current, false);
+  });
+}
+
+test("dashboard collection locks before wallet lookup and permits retry after rejection", async () => {
+  const collecting = { current: false };
+  let walletLookups = 0;
+  let rejectWallet!: (error: Error) => void;
+  const pendingWallet = new Promise<never>((_, reject) => { rejectWallet = reject; });
+  const collect = handler("./MeDashboard.tsx", "collect", {
+    mounted: { current: true }, collecting, address: "wallet", config: {}, CHAINS: { base: { id: 8453 } },
+    launchpad: () => ({ locker: "locker" }), key: () => "base:token",
+    setBusy: () => {}, setCollection: () => {}, getPublicClient: () => ({}),
+    getWalletClient: () => { walletLookups++; return pendingWallet; },
+    toast: () => {}, friendlyError: (error: Error) => error.message,
+  });
+  const launch = { chain: "base", token: "token", token_id: 1, symbol: "TEST" };
+  const first = collect(launch);
+  assert.equal(await collect(launch), false);
+  assert.equal(walletLookups, 1);
+  rejectWallet(new Error("Wallet request rejected"));
+  assert.equal(await first, false);
+  assert.equal(collecting.current, false);
+  await collect(launch);
+  assert.equal(walletLookups, 2);
+});
+
+test("collect-all stops at a rejected item, skips unknown fees and releases its batch lock", async () => {
+  const collectingBatch = { current: false };
+  const items: string[] = [];
+  const batches: ({ completed: number; total: number } | null)[] = [];
+  const collectAll = handler("./MeDashboard.tsx", "collectAll", {
+    me: { launches: [{ token: "one" }, { token: "unknown" }, { token: "two" }, { token: "three" }] },
+    pending: { one: 1n, unknown: null, two: 2n, three: 3n },
+    key: (launch: { token: string }) => launch.token,
+    mounted: { current: true }, collecting: { current: false }, collectingBatch,
+    setBatch: (batch: { completed: number; total: number } | null) => batches.push(batch ? { ...batch } : null),
+    collect: async (launch: { token: string }) => { items.push(launch.token); return launch.token !== "two"; },
+  });
+  await collectAll();
+  assert.deepEqual(items, ["one", "two"]);
+  assert.deepEqual(batches, [{ completed: 0, total: 3 }, { completed: 1, total: 3 }, null]);
+  assert.equal(collectingBatch.current, false);
+});
+
+test("collect-all does not request the next signature after its wallet boundary unmounts", async () => {
+  const mounted = { current: true };
+  const collectingBatch = { current: false };
+  let calls = 0;
+  let staleUpdates = 0;
+  const collectAll = handler("./MeDashboard.tsx", "collectAll", {
+    me: { launches: [{ token: "one" }, { token: "two" }] }, pending: { one: 1n, two: 1n },
+    key: (launch: { token: string }) => launch.token, mounted, collecting: { current: false }, collectingBatch,
+    setBatch: () => { if (!mounted.current) staleUpdates++; },
+    collect: async () => { calls++; mounted.current = false; return true; },
+  });
+  await collectAll();
+  assert.equal(calls, 1);
+  assert.equal(staleUpdates, 0);
+  assert.equal(collectingBatch.current, false);
+});
 
 test("preparing a trade disables the same controls as signing and confirming", () => {
   const source = readFileSync(new URL("./TradePanel.tsx", import.meta.url), "utf8");
