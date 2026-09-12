@@ -11,7 +11,7 @@ import { SNIPER_BLOCKS } from "./holders";
 import { imagePublicBase } from "./imageStore";
 import { fdvQuote, quotePerToken, tickToTokensPerQuote, units } from "./math";
 import type { RawCandle } from "./candles";
-import { normalizeQuery, isAddressQuery, rankHit, type LaunchFilter } from "./search";
+import { normalizeQuery, isAddressQuery, escapeLike, compareSearchHit, type LaunchFilter } from "./search";
 
 /**
  * Read model for the UI. Every money field comes in two flavours: raw quote
@@ -306,7 +306,7 @@ export async function getLaunch(chain: ChainKey, token: string, ethUsd: number |
 export async function findLaunchChain(token: string): Promise<ChainKey | null> {
   const db = maybeDb();
   if (!db) return null;
-  const rows = await db<{ chain_id: number }[]>`SELECT chain_id FROM bb_launches WHERE token = ${token.toLowerCase()} ORDER BY block_number DESC LIMIT 1`;
+  const rows = await db<{ chain_id: number }[]>`SELECT chain_id FROM bb_launches WHERE token = ${token.toLowerCase()} ORDER BY block_time DESC, chain_id DESC, block_number DESC LIMIT 1`;
   return rows[0] ? chainKeyOf(rows[0].chain_id) : null;
 }
 
@@ -430,9 +430,13 @@ export async function searchLaunches(q: string, opts: { chain?: ChainKey | null;
   const chainCond = opts.chain ? db`AND l.chain_id = ${chainIdOf(opts.chain)}` : db``;
   const rows = isAddressQuery(n)
     ? await db<Raw[]>`${db.unsafe(SELECT)} WHERE l.token = ${n} ${chainCond}`
-    : await db<Raw[]>`${db.unsafe(SELECT)} WHERE (l.name ILIKE ${"%" + n + "%"} OR l.symbol ILIKE ${"%" + n + "%"}) ${chainCond} ORDER BY l.block_number DESC LIMIT 200`;
+    // LIKE metacharacters in n are escaped (ESCAPE '\'): a search for "%" or
+    // "_" matches those literal characters, not every row. Pre-limit orders by
+    // block time — never raw block numbers across chains (Base heights dwarf
+    // Robinhood's, so the old ORDER BY hid exact matches on the low chain).
+    : await db<Raw[]>`${db.unsafe(SELECT)} WHERE (l.name ILIKE ${"%" + escapeLike(n) + "%"} ESCAPE '\' OR l.symbol ILIKE ${"%" + escapeLike(n) + "%"} ESCAPE '\') ${chainCond} ORDER BY l.block_time DESC, l.chain_id DESC, l.block_number DESC LIMIT 200`;
   const shaped = rows.map((r) => shape(r, opts.ethUsd ?? null));
-  shaped.sort((a, b) => rankHit(a, n) - rankHit(b, n) || b.block_number - a.block_number);
+  shaped.sort((a, b) => compareSearchHit(a, b, n));
   return shaped.slice(0, limit);
 }
 
