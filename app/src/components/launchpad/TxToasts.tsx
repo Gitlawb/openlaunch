@@ -6,7 +6,7 @@ import TokenAvatar from "./TokenAvatar";
 import type { FeedItem } from "@/lib/launchpad/queries";
 import { fmtQuote } from "@/lib/launchpad/math";
 import type { ChainKey } from "@/lib/chainPublic";
-import { CHAIN_SHORT } from "@/lib/chainPublic";
+import { CHAIN_SHORT, DEFAULT_CHAIN } from "@/lib/chainPublic";
 import { shortAddr } from "@/lib/chainPublic";
 import { useLive } from "./LiveProvider";
 
@@ -136,7 +136,7 @@ function ToastCard({ t, onClose }: { t: Toast; onClose: () => void }) {
     </div>
   );
   return t.token ? (
-    <Link href={`/t/${t.chain ?? "base"}/${t.token}`} className="block">
+    <Link href={`/t/${t.chain ?? DEFAULT_CHAIN}/${t.token}`} className="block">
       {inner}
     </Link>
   ) : (

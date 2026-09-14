@@ -8,6 +8,9 @@ import { CHAIN_KEYS, CHAIN_LABELS, CHAIN_SHORT, chainKeyOf, explorerAddress, exp
 import WalletAvatar from "./WalletAvatar";
 import styles from "./WalletMenu.module.css";
 
+/** The letter tile beside each network in the switcher; tone "" keeps the brand default. */
+const NETWORK_GLYPHS: Record<ChainKey, { letter: string; tone: string }> = { base: { letter: "B", tone: "" }, robinhood: { letter: "R", tone: styles.robinhood } };
+
 type WalletMenuProps = {
   address: string;
   chainId?: number;
@@ -124,7 +127,7 @@ function AccountMenu({ address, chainId, connectorName, block = false, switching
               <div className={styles.networks} role="group" aria-label="Wallet network">
                 {CHAIN_KEYS.map((chain) => (
                   <button type="button" key={chain} className={styles.networkButton} aria-pressed={chain === key} disabled={busy} onClick={() => void runAction(chain)}>
-                    <span className={`${styles.networkGlyph} ${chain === "robinhood" ? styles.robinhood : ""}`} aria-hidden>{chain === "base" ? "B" : "R"}</span>
+                    <span className={`${styles.networkGlyph} ${NETWORK_GLYPHS[chain].tone}`} aria-hidden>{NETWORK_GLYPHS[chain].letter}</span>
                     <span>{CHAIN_SHORT[chain]}</span>
                     {localBusy === chain ? <span className={styles.pendingDot} aria-label="Switching" /> : chain === key ? <Check size={14} className={styles.networkCheck} aria-hidden /> : null}
                   </button>

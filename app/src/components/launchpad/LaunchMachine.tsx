@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type PointerEvent } from "react";
 import { Pause, Play, ArrowUpRight, LockKeyhole } from "lucide-react";
 import { launchpad } from "@/lib/launchpad/config";
-import { explorerAddress } from "@/lib/chainPublic";
+import { CHAIN_KEYS, CHAIN_SHORT, explorerAddress } from "@/lib/chainPublic";
 import { shouldAnimateLaunch } from "@/lib/launchpad/hero-animation";
 import styles from "./LaunchMachine.module.css";
 
@@ -70,8 +70,7 @@ export default function LaunchMachine() {
     if (scene.current) scene.current.style.transform = `perspective(1000px) rotateX(${-y * 5}deg) rotateY(${x * 7}deg)`;
   }
 
-  const baseLocker = launchpad("base").locker;
-  const rhLocker = launchpad("robinhood").locker;
+  const lockers = CHAIN_KEYS.flatMap((k) => { const locker = launchpad(k).locker; return locker ? [{ chain: k, locker }] : []; });
 
   return <div ref={root} className={styles.machine} data-stage={stage} data-loop={looping} data-playing={playing}>
     <div className={styles.heading}>
@@ -158,7 +157,7 @@ export default function LaunchMachine() {
     </div>
     <div className={styles.proof}>
       <span><LockKeyhole size={12} aria-hidden /> Verify the locker</span>
-      <span>{baseLocker && <a href={explorerAddress("base", baseLocker)} target="_blank" rel="noreferrer">Base <ArrowUpRight size={11} aria-hidden /></a>}{rhLocker && <a href={explorerAddress("robinhood", rhLocker)} target="_blank" rel="noreferrer">Robinhood <ArrowUpRight size={11} aria-hidden /></a>}</span>
+      <span>{lockers.map(({ chain, locker }) => <a key={chain} href={explorerAddress(chain, locker)} target="_blank" rel="noreferrer">{CHAIN_SHORT[chain]} <ArrowUpRight size={11} aria-hidden /></a>)}</span>
     </div>
   </div>;
 }

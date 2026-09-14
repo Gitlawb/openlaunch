@@ -1,7 +1,7 @@
 import "server-only";
 import { maybeDb } from "@/lib/db";
 import { publicClient } from "@/lib/chain";
-import { chainIdOf, type ChainKey } from "@/lib/chainPublic";
+import { CHAIN_KEYS, chainKeyOf, type ChainKey } from "@/lib/chainPublic";
 import { STOCK_PRICE_URL, STOCK_REGISTRY_URL, parseRegistry, stockUsd, type StockQuote } from "./stocks";
 import { BASE_STOCKS, baseStockByAddress, feedUsd, stockTileSvg } from "./baseStocks";
 
@@ -54,19 +54,28 @@ export async function ensureRegistry(): Promise<Cache | null> {
   return registry;
 }
 
+/**
+ * Where a chain's tokenized stocks come from: Coinbase's static B20 list (Base), Robinhood's registry (Robinhood Chain),
+ * or none. Explicit per chain so a new chain never inherits another chain's registry.
+ */
+export type StockSource = "coinbase-b20" | "robinhood-registry" | null;
+export const STOCK_SOURCE: Record<ChainKey, StockSource> = { base: "coinbase-b20", robinhood: "robinhood-registry" };
+
 /** Synchronous registry lookup for any chain (call ensureRegistry() first in the request for robinhood). */
 export function stockByAddress(chain: ChainKey, address: string): Stock | null {
   const a = address.toLowerCase();
-  if (chain === "base") {
+  if (STOCK_SOURCE[chain] === "coinbase-b20") {
     const s = baseStockByAddress(a);
     return s ? { chain, address: s.address, symbol: s.symbol, name: s.name, decimals: s.decimals, logo: stockTileSvg(s.symbol) } : null;
   }
+  if (STOCK_SOURCE[chain] !== "robinhood-registry") return null;
   const s = registry?.byAddress.get(a);
   return s ? { chain, address: s.address, symbol: s.symbol, name: s.name, decimals: s.decimals, logo: s.logo } : null;
 }
 
 export function stockList(chain: ChainKey): Stock[] {
-  if (chain === "base") return BASE_STOCKS.map((s) => ({ chain, address: s.address, symbol: s.symbol, name: s.name, decimals: s.decimals, logo: stockTileSvg(s.symbol) }));
+  if (STOCK_SOURCE[chain] === "coinbase-b20") return BASE_STOCKS.map((s) => ({ chain, address: s.address, symbol: s.symbol, name: s.name, decimals: s.decimals, logo: stockTileSvg(s.symbol) }));
+  if (STOCK_SOURCE[chain] !== "robinhood-registry") return [];
   return (registry?.list ?? []).map((s) => ({ chain, address: s.address, symbol: s.symbol, name: s.name, decimals: s.decimals, logo: s.logo }));
 }
 
@@ -121,8 +130,8 @@ export async function stockPrices(chain: ChainKey, addresses: string[]): Promise
   }
   if (miss.length === 0) return out;
   const fresh = new Map<string, number | null>();
-  if (chain === "base") for (const [a, v] of await fetchBasePrices(miss)) fresh.set(a, v);
-  else {
+  if (STOCK_SOURCE[chain] === "coinbase-b20") for (const [a, v] of await fetchBasePrices(miss)) fresh.set(a, v);
+  else if (STOCK_SOURCE[chain] === "robinhood-registry") {
     const reg = await ensureRegistry();
     await Promise.all(
       miss.map(async (a) => {
@@ -142,13 +151,13 @@ export async function stockPrices(chain: ChainKey, addresses: string[]): Promise
 
 /** Stock addresses currently used as quotes by launches, per chain (so pricing stays bounded). */
 export async function stockQuotesInUse(): Promise<Record<ChainKey, string[]>> {
-  const out: Record<ChainKey, string[]> = { base: [], robinhood: [] };
+  const out = Object.fromEntries(CHAIN_KEYS.map((k) => [k, [] as string[]])) as Record<ChainKey, string[]>;
   const db = maybeDb();
   if (!db) return out;
   const rows = await db<{ chain_id: number; quote: string }[]>`SELECT DISTINCT chain_id, quote FROM bb_launches`;
   await ensureRegistry();
   for (const r of rows) {
-    const chain: ChainKey | null = r.chain_id === chainIdOf("base") ? "base" : r.chain_id === chainIdOf("robinhood") ? "robinhood" : null;
+    const chain = chainKeyOf(r.chain_id);
     if (chain && stockByAddress(chain, r.quote)) out[chain].push(r.quote);
   }
   return out;

@@ -1,16 +1,17 @@
 import { createConfig, http } from "wagmi";
 import { injected, coinbaseWallet } from "wagmi/connectors";
-import { CHAINS, robinhood } from "./chainPublic";
+import type { Chain } from "viem";
+import { CHAINS, CHAIN_KEYS, DEFAULT_CHAIN } from "./chainPublic";
 import { browserRpc } from "./launchpad/config";
 
-// Two chains, one config. Reads/simulations go through our RPC proxy per chain
+// Every chain in one config, the default first. Reads/simulations go through our RPC proxy per chain
 // (or a dev override); wallets send transactions through their own provider.
+const keys = [DEFAULT_CHAIN, ...CHAIN_KEYS.filter((k) => k !== DEFAULT_CHAIN)];
+const chains = keys.map((k) => CHAINS[k]) as [Chain, ...Chain[]];
+
 export const wagmiConfig = createConfig({
-  chains: [CHAINS.base, robinhood],
+  chains,
   connectors: [injected(), coinbaseWallet({ appName: "openlaunch.lol", preference: { options: "all", telemetry: false } })],
-  transports: {
-    [CHAINS.base.id]: http(browserRpc("base"), { batch: true }),
-    [robinhood.id]: http(browserRpc("robinhood"), { batch: true }),
-  },
+  transports: Object.fromEntries(keys.map((k) => [CHAINS[k].id, http(browserRpc(k), { batch: true })])),
   ssr: true,
 });

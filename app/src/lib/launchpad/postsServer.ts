@@ -1,10 +1,13 @@
 import "server-only";
 import { isAddress, type Address, type Hex } from "viem";
 import { publicClient } from "@/lib/chain";
-import { chainIdOf, chainKeyOf, type ChainKey } from "@/lib/chainPublic";
+import { CHAIN_KEY_PATTERN, DEFAULT_CHAIN, chainIdOf, chainKeyOf, type ChainKey } from "@/lib/chainPublic";
 import { maybeDb } from "@/lib/db";
 import { ERC20_MIN_ABI } from "./abi";
 import { AUTO_HIDE_REPORTS, POST_DAILY_MAX, POST_MIN_GAP_MS, buildModMessage, buildPostMessage, buildReportMessage, canPostNow, holderTag, isReportReason, tsFresh, validateBody, type ModAction, type Tag } from "./posts";
+
+/** Mute targets: `token:<chain>:<address>`. */
+const TOKEN_TARGET_RE = new RegExp(`^token:(${CHAIN_KEY_PATTERN}):(0x[0-9a-f]{40})$`);
 
 /**
  * Server half of posts. Rules, all enforced here regardless of the client:
@@ -53,7 +56,7 @@ export type PostRow = { id: number; chain: ChainKey; token: string; wallet: stri
 type RawPost = { id: bigint | number; chain_id: number; token: string; wallet: string; parent_id: bigint | number | null; body: string; tag: string | null; created_at: string; reports: number; hidden: boolean; symbol?: string; name?: string };
 
 function shape(r: RawPost): PostRow {
-  return { id: Number(r.id), chain: chainKeyOf(r.chain_id) ?? "base", token: r.token, wallet: r.wallet, parent_id: r.parent_id === null ? null : Number(r.parent_id), body: r.body, tag: (r.tag as Tag) ?? null, created_at: r.created_at, reports: r.reports, hidden: r.hidden, symbol: r.symbol, name: r.name };
+  return { id: Number(r.id), chain: chainKeyOf(r.chain_id) ?? DEFAULT_CHAIN, token: r.token, wallet: r.wallet, parent_id: r.parent_id === null ? null : Number(r.parent_id), body: r.body, tag: (r.tag as Tag) ?? null, created_at: r.created_at, reports: r.reports, hidden: r.hidden, symbol: r.symbol, name: r.name };
 }
 
 export async function listTokenPosts(chain: ChainKey, token: string, limit = 100, beforeId: number | null = null): Promise<{ posts: PostRow[]; muted: boolean; nextCursor: number | null }> {
@@ -168,7 +171,7 @@ export async function reportPost(p: { postId: unknown; wallet: string; reason: u
   const [post] = await db<{ chain_id: number; wallet: string }[]>`SELECT chain_id, wallet FROM bb_posts WHERE id = ${postId}`;
   if (!post) return fail("post not found", 404);
   if (post.wallet === wallet) return fail("cannot report your own post", 400);
-  const chain = chainKeyOf(post.chain_id) ?? "base";
+  const chain = chainKeyOf(post.chain_id) ?? DEFAULT_CHAIN;
   // reporters need skin in the game too: any trade or launch on the site
   const [act] = await db<{ n: bigint }[]>`SELECT (SELECT count(*) FROM bb_launch_swaps WHERE trader = ${wallet}) + (SELECT count(*) FROM bb_launches WHERE launcher = ${wallet}) + (SELECT count(*) FROM bb_posts WHERE wallet = ${wallet}) AS n`;
   if (Number(act.n) === 0) return fail("trade, launch or post first to report", 403);
@@ -194,9 +197,9 @@ export async function moderate(p: { action: unknown; target: unknown; wallet: st
   if (typeof p.target !== "string" || p.target.length > 120) return fail("bad target", 400);
   if (!isNonce(p.nonce) || !tsFresh(p.ts, Date.now())) return fail("stale or bad nonce", 400);
   const admins = adminWallets();
-  let chain: ChainKey = "base";
+  let chain: ChainKey = DEFAULT_CHAIN;
   if (action === "mute" || action === "unmute") {
-    const m = /^token:(base|robinhood):(0x[0-9a-f]{40})$/.exec(p.target);
+    const m = TOKEN_TARGET_RE.exec(p.target);
     if (!m) return fail("bad target", 400);
     chain = m[1] as ChainKey;
     const [l] = await db<{ launcher: string }[]>`SELECT launcher FROM bb_launches WHERE chain_id = ${chainIdOf(chain)} AND token = ${m[2]}`;
@@ -210,7 +213,7 @@ export async function moderate(p: { action: unknown; target: unknown; wallet: st
   if (!(await verify(chain, wallet, message, p.signature))) return fail("signature does not match", 401);
   if (!(await consumeNonce(p.nonce, wallet))) return fail("nonce already used", 401);
   if (action === "mute" || action === "unmute") {
-    const [, c, t] = /^token:(base|robinhood):(0x[0-9a-f]{40})$/.exec(p.target)!;
+    const [, c, t] = TOKEN_TARGET_RE.exec(p.target)!;
     await db`INSERT INTO bb_token_settings (chain_id, token, comments_muted) VALUES (${chainIdOf(c as ChainKey)}, ${t}, ${action === "mute"})
              ON CONFLICT (chain_id, token) DO UPDATE SET comments_muted = EXCLUDED.comments_muted, updated_at = now()`;
   } else {

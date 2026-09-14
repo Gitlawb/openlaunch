@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { b20RpcUrl, rpcUrl } from "@/lib/chain";
 import { responseHasB20Error } from "@/lib/launchpad/baseStocks";
-import { CHAINS, isChainKey } from "@/lib/chainPublic";
+import { CHAINS, DEFAULT_CHAIN, isChainKey } from "@/lib/chainPublic";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +61,7 @@ function safeJson(text: string): unknown {
 }
 
 export async function POST(req: Request) {
-  const c = new URL(req.url).searchParams.get("chain") ?? "base";
+  const c = new URL(req.url).searchParams.get("chain") ?? DEFAULT_CHAIN;
   if (!isChainKey(c)) return NextResponse.json({ error: "bad chain" }, { status: 400 });
   const upstream = rpcUrl(c) ?? CHAINS[c].rpcUrls.default.http[0];
   if (!upstream) return NextResponse.json({ error: "rpc unconfigured" }, { status: 503 });

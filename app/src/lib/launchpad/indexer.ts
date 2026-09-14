@@ -32,8 +32,13 @@ export type LaunchSyncResult = {
   caught_up?: boolean;
 };
 
+const DEPLOY_BLOCK_ENV: Record<ChainKey, () => string | undefined> = {
+  base: () => process.env.LAUNCH_DEPLOY_BLOCK,
+  robinhood: () => process.env.LAUNCH_DEPLOY_BLOCK_ROBINHOOD,
+};
+
 export function launchDeployBlock(chain: ChainKey): bigint {
-  const raw = ((chain === "base" ? process.env.LAUNCH_DEPLOY_BLOCK : process.env.LAUNCH_DEPLOY_BLOCK_ROBINHOOD) ?? "").trim();
+  const raw = (DEPLOY_BLOCK_ENV[chain]() ?? "").trim();
   return /^\d+$/.test(raw) ? BigInt(raw) : 0n;
 }
 function confirmations(): bigint {

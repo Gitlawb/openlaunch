@@ -11,6 +11,7 @@
  * Both sides are 18-dec, so no decimal adjustment. Display + sorting only, never used on-chain.
  */
 import type { Address } from "viem";
+import { DEFAULT_CHAIN, type ChainKey } from "../chainKeys.ts";
 import { poolIdOf, sqrtPriceToTokensPerQuote } from "./math.ts";
 import { stockMcapPresets } from "./stocks.ts";
 
@@ -22,7 +23,8 @@ export const GITLAWB_ADDRESS = "0x5f980dcfc4c0fa3911554cf5ab288ed0eb13dba3";
  * bridge keeps the two within arbitrage of each other.
  */
 export const GITLAWB_ADDRESS_ROBINHOOD = "0xd1b0d44e4f6ed940fcc7a9f59bf30daf62ccfe3d";
-export const GITLAWB_ADDRESSES: Record<"base" | "robinhood", string> = { base: GITLAWB_ADDRESS, robinhood: GITLAWB_ADDRESS_ROBINHOOD };
+/** GITLAWB per chain, lowercase; null where it has not been bridged (a new chain must say so explicitly). */
+export const GITLAWB_ADDRESSES: Record<ChainKey, string | null> = { base: GITLAWB_ADDRESS, robinhood: GITLAWB_ADDRESS_ROBINHOOD };
 export const GITLAWB_SYMBOL = "GITLAWB";
 export const GITLAWB_NAME = "Gitlawb";
 export const GITLAWB_DECIMALS = 18;
@@ -108,6 +110,7 @@ export const GITLAWB_LOGO_PATH = "/gitlawb-mark.png";
 /** The tile's ground — badges use the same black so the tile and the pill read as one piece. */
 export const GITLAWB_LOGO_BG = "#000000";
 
-export function isGitlawbAddress(address: string, chain: "base" | "robinhood" = "base"): boolean {
-  return address.toLowerCase() === GITLAWB_ADDRESSES[chain];
+export function isGitlawbAddress(address: string, chain: ChainKey = DEFAULT_CHAIN): boolean {
+  const gl = GITLAWB_ADDRESSES[chain];
+  return gl !== null && address.toLowerCase() === gl;
 }

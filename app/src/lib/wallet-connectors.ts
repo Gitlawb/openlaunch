@@ -10,6 +10,8 @@
  *  - the Coinbase connector (type "coinbaseWallet"), which needs no extension: Smart Wallet signs
  *    with a passkey in a popup, and the same popup pairs the Coinbase Wallet app.
  */
+import { chainList } from "./chainKeys.ts";
+
 export type ConnectorInfo = { id: string; name: string; type: string; icon?: string };
 
 export type WalletChoice = {
@@ -76,7 +78,7 @@ export function connectErrorMessage(err: unknown): string {
   if (found({ name: /^ResourceUnavailableRpcError$/, message: /already pending|already processing/i, code: -32002 }))
     return "The wallet already has a connection request open. Finish it there, then try again.";
   if (found({ name: /^(ChainNotConfiguredError|SwitchChainError)$/, message: /chain not configured|unrecognized chain/i }))
-    return "Connected, but the wallet is on a network this site does not support. Switch to Base or Robinhood Chain in the wallet.";
+    return `Connected, but the wallet is on a network this site does not support. Switch to ${chainList("or")} in the wallet.`;
   if (found({ message: /pop-?up|window\.open|blocked/i })) return "The wallet window was blocked. Allow pop-ups for this site and try again.";
   if (found({ message: /cannot find module|failed to fetch dynamically imported module|loading chunk/i, code: "MODULE_NOT_FOUND" }))
     return "That wallet option failed to load. Reload the page and try again.";

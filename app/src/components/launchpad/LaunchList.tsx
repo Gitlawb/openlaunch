@@ -9,7 +9,7 @@ import { useLive } from "./LiveProvider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/vendor/toggle-group";
 import { btn } from "@/components/ui";
 import type { LaunchRow as L, LaunchSort, VolumeWindow } from "@/lib/launchpad/queries";
-import { CHAIN_SHORT, type ChainKey } from "@/lib/chainPublic";
+import { CHAIN_KEYS, CHAIN_SHORT, type ChainKey } from "@/lib/chainPublic";
 import { FILTERS, isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit, type LaunchFilter } from "@/lib/launchpad/search";
 import { launchKey, mergeLaunches, refreshInPlace } from "@/lib/launchpad/list-state";
 import { liveChip, liveTier } from "@/lib/launchpad/ranking";
@@ -28,8 +28,7 @@ const SORTS: { key: LaunchSort; label: string }[] = [
 const WINDOWS: VolumeWindow[] = ["1h", "24h", "all"];
 const CHAIN_FILTERS: { key: ChainKey | null; label: string }[] = [
   { key: null, label: "All chains" },
-  { key: "base", label: CHAIN_SHORT.base },
-  { key: "robinhood", label: CHAIN_SHORT.robinhood },
+  ...CHAIN_KEYS.map((key) => ({ key, label: CHAIN_SHORT[key] })),
 ];
 const HL_NEW_MS = 60_000;
 const HL_TRADE_MS = 2_500;

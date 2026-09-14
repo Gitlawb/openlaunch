@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { chainKeyOf } from "@/lib/chainPublic";
 import { dbConfigured, maybeDb } from "@/lib/db";
 import { LAUNCHPAD_CONFIGURED, launchpad } from "@/lib/launchpad/config";
 import { syncLagAlertBlocks } from "@/lib/config";
@@ -35,9 +36,10 @@ export async function GET() {
             select chain_id, cursor_block, head_block, last_run_at, last_error from bb_launch_sync_cursor order by chain_id desc`,
           DB_TIMEOUT_MS,
         );
-        chains = rows
-          .filter((r) => (r.chain_id === 8453 ? launchpad("base").configured : r.chain_id === 4663 ? launchpad("robinhood").configured : false))
-          .map((r) => ({ chain: r.chain_id === 8453 ? "base" : "robinhood", cursor_block: blockNumber(r.cursor_block), head_block: blockNumber(r.head_block), last_run_at: r.last_run_at, last_error: r.last_error }));
+        chains = rows.flatMap((r) => {
+          const chain = chainKeyOf(r.chain_id);
+          return chain && launchpad(chain).configured ? [{ chain, cursor_block: blockNumber(r.cursor_block), head_block: blockNumber(r.head_block), last_run_at: r.last_run_at, last_error: r.last_error }] : [];
+        });
         sync = chains[0] ?? null;
       } catch {
         // pre-migration

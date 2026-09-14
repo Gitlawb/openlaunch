@@ -114,15 +114,18 @@ test("stock quote: one blocking message, a chip that names the issuer, a way out
   assert.doesNotMatch(source, /aria-live/);
   assert.doesNotMatch(source, /data-testid|\(registry\)|Quote = \{/);
   // the picked stock chip says whose stock it is and can be cleared; "Switch quote" returns to the first configured quote
-  assert.match(source, /\{stock\.symbol\}\s*<span className="[^"]*">\{chain === "base" \? "Coinbase stock" : "Robinhood stock"\}<\/span>/);
+  assert.match(source, /\{stock\.symbol\}\s*<span className="[^"]*">\{CHAIN_COPY\[chain\]\.stockBadge\}<\/span>/);
+  assert.match(source, /stockBadge: "Coinbase stock"/);
+  assert.match(source, /stockBadge: "Robinhood stock"/);
   assert.match(source, /aria-label="clear stock quote"/);
   assert.match(source, /Switch quote/);
   assert.match(source, /setQuoteKey\(cfg\.quotes\[0\]\?\.key \?\? "eth"\);\s*setStock\(null\);\s*setStockQ\(""\);\s*setMcapPick\(null\);\s*setCustomMcap\(""\);/);
   // switching chains drops the picked stock: a registry address from one chain must never become the other chain's quote
   // ...but re-clicking the active chain is a no-op, so it cannot wipe the picked stock
   assert.match(source, /if \(k === chain\) return;[^}]*setChain\(k\);\s*setQuoteKey\(launchpad\(k\)\.quotes\[0\]\.key\);[^}]*setStock\(null\);\s*setStockQ\(""\);\s*setStockHits\(\[\]\);/);
-  // the issuer disclaimer is rendered from one helper for both chains
-  assert.match(source, /<p className=\{helper\}>\{stockIssuerDisclaimer\(chain\)\}<\/p>/);
+  // the issuer disclaimer is rendered from the per-chain copy table (a Record<ChainKey, …>: a new chain must write its own)
+  assert.match(source, /const CHAIN_COPY: Record<ChainKey, \{/);
+  assert.match(source, /<p className=\{helper\}>\{CHAIN_COPY\[chain\]\.stockIssuer\}<\/p>/);
 });
 
 test("beneficiary split: recipients come from the tested helper, and the summary reflects the split", () => {

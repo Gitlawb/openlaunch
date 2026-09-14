@@ -27,9 +27,8 @@ test("hero metrics preserve shared live totals without inventing per-chain dolla
   for (const field of ["launches", "volume_usd", "fees_to_creators_usd", "fees_burned_usd", "trades", "gitlawb_burned", "usd_partial"]) {
     assert.ok(metrics.includes(`t.${field}`), `missing live total: ${field}`);
   }
-  for (const chain of ["base", "robinhood"]) {
-    assert.ok(metrics.includes(`t.by_chain.${chain}.launches`), `missing ${chain} launch count`);
-  }
+  // one launch count per chain, driven by the chain list so a new chain shows up without editing the hero
+  assert.match(metrics, /CHAIN_KEYS\.map\(\(k\) => [^\n]*t\.by_chain\[k\]\.launches/, "missing per-chain launch counts");
   // while any quote is unpriced the three dollar figures say "≈" with a tooltip instead of a confident undercount
   assert.match(metrics, /t\.usd_partial \? "≈" : ""/);
   for (const field of ["volume_usd", "fees_to_creators_usd", "fees_burned_usd"]) assert.ok(metrics.includes(`usd(t.${field}`), `${field} not routed through the ≈ guard`);
@@ -51,10 +50,9 @@ test("hero metrics preserve shared live totals without inventing per-chain dolla
 test("launch machine keeps proof links and the header CTA handoff contract", () => {
   assert.match(hero, /id="hero-cta"/);
   assert.match(metrics, /BRAND_GITHUB[\s\S]*contracts\/src/);
-  for (const chain of ["base", "robinhood"]) {
-    assert.ok(machine.includes(`launchpad("${chain}").locker`));
-    assert.ok(machine.includes(`explorerAddress("${chain}",`));
-  }
+  // a locker proof link for every configured chain
+  assert.match(machine, /CHAIN_KEYS\.flatMap\(\(k\) => \{ const locker = launchpad\(k\)\.locker;/);
+  assert.match(machine, /explorerAddress\(chain, locker\)/);
 });
 
 test("decorative geometry has readable keyboard-operable mechanism controls", () => {
