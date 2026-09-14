@@ -65,11 +65,25 @@ function randomSalt(): Hex {
 /** Shown wherever the form is blocked on a stock choice: one sentence, one place. */
 const STOCK_PICK_MESSAGE = "Pick a stock to price the token in, or switch the quote.";
 
-function stockIssuerDisclaimer(chain: ChainKey): string {
-  return chain === "base"
-    ? "Coinbase tokenized stocks are securities issued by Coinbase under Regulation S and are not offered to persons in the US, UK, Canada, Australia, Singapore or Switzerland. That is Coinbase's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4."
-    : "Robinhood Stock Tokens are tokenised securities issued by Robinhood and are not offered to US persons. That is Robinhood's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.";
-}
+/** Per-chain copy in the form. A chain's quotes and stock registry differ, so its sentences do too. */
+const CHAIN_COPY: Record<ChainKey, { blurb: string; stockPays: string; stockBadge: string; stockEmpty: string; stockIssuer: string; gitlawbOrigin: string }> = {
+  base: {
+    blurb: "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents.",
+    stockPays: "Buyers pay with a Coinbase tokenized stock; fees are paid in that stock.",
+    stockBadge: "Coinbase stock",
+    stockEmpty: "No match. 13 Coinbase tokenized stocks are available on Base: NVDAc, AAPLc, TSLAc, METAc, GOOGLc, AMZNc, MSFTc, MSTRc, COINc, CRCLc, INTCc, SNDKc, SPCXc.",
+    stockIssuer: "Coinbase tokenized stocks are securities issued by Coinbase under Regulation S and are not offered to persons in the US, UK, Canada, Australia, Singapore or Switzerland. That is Coinbase's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.",
+    gitlawbOrigin: " on Base",
+  },
+  robinhood: {
+    blurb: "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents.",
+    stockPays: "Buyers pay with a Robinhood Stock Token; fees are paid in that stock.",
+    stockBadge: "Robinhood stock",
+    stockEmpty: "No match. 194 Robinhood Stock Tokens are available, e.g. AAPL, TSLA, NVDA, SPY.",
+    stockIssuer: "Robinhood Stock Tokens are tokenised securities issued by Robinhood and are not offered to US persons. That is Robinhood's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.",
+    gitlawbOrigin: ", bridged 1:1 from Base to Robinhood Chain over LayerZero",
+  },
+};
 
 type FirstBuyCtx = { pub: PublicClient; wallet: WalletClient; address: Address; V4: ReturnType<typeof launchpad>["v4"]; quote: Quote; feePips: number; CHAIN: (typeof CHAINS)[ChainKey]; setPhase: (p: Phase) => void };
 
@@ -430,7 +444,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                   aria-pressed={active}
                 >
                   <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{CHAIN_LABELS[k]}</div>
-                  <div className="text-xs text-body mt-0.5 leading-snug">{!ok ? UNCONFIGURED_CHAIN_COPY : k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents."}</div>
+                  <div className="text-xs text-body mt-0.5 leading-snug">{!ok ? UNCONFIGURED_CHAIN_COPY : CHAIN_COPY[k].blurb}</div>
                 </button>
               );
             })}
@@ -457,7 +471,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 ))}
               </div>
               <span className="text-xs text-muted">
-                {quote.key === "usdg" ? "Buyers pay with USDG; market cap and fees are in dollars." : quote.key === "gitlawb" ? "Buyers pay with GITLAWB; fees are paid in GITLAWB, or burned." : quote.key === "stock" ? (chain === "base" ? "Buyers pay with a Coinbase tokenized stock; fees are paid in that stock." : "Buyers pay with a Robinhood Stock Token; fees are paid in that stock.") : "Buyers pay with ETH."}
+                {quote.key === "usdg" ? "Buyers pay with USDG; market cap and fees are in dollars." : quote.key === "gitlawb" ? "Buyers pay with GITLAWB; fees are paid in GITLAWB, or burned." : quote.key === "stock" ? CHAIN_COPY[chain].stockPays : "Buyers pay with ETH."}
               </span>
               {cfg.quotes.some((q) => q.key === "gitlawb") && quote.key !== "gitlawb" ? (
                 <button type="button" onClick={() => { setQuoteKey("gitlawb"); setMcapPick(null); setCustomMcap(""); }} className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink" title="Pair with GITLAWB and your token carries the GITLAWB badge everywhere on the site">
@@ -478,7 +492,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 {quote.usd ? <span className="font-mono text-xs opacity-80">{fmtUsd(quote.usd)}</span> : <span className="font-mono text-xs opacity-60">price unavailable</span>}
               </span>
               <p className={helper}>
-                Your token carries the <GitlawbBadge /> badge on the launch list, trending, the activity feed, its page and its share card. GITLAWB is Gitlawb&apos;s token{chain === "robinhood" ? ", bridged 1:1 from Base to Robinhood Chain over LayerZero" : " on Base"}: an ordinary ERC-20, no transfer restrictions, no issuer switch. Name no beneficiary and every trading fee burns GITLAWB. Price from the Uniswap v4 WETH/GITLAWB pool on Base.{" "}
+                Your token carries the <GitlawbBadge /> badge on the launch list, trending, the activity feed, its page and its share card. GITLAWB is Gitlawb&apos;s token{CHAIN_COPY[chain].gitlawbOrigin}: an ordinary ERC-20, no transfer restrictions, no issuer switch. Name no beneficiary and every trading fee burns GITLAWB. Price from the Uniswap v4 WETH/GITLAWB pool on Base.{" "}
                 <a href={GITLAWB_SITE} target="_blank" rel="noreferrer" className="underline decoration-line underline-offset-2 hover:text-ink">gitlawb.com ↗</a>
               </p>
             </div>
@@ -493,7 +507,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       <img src={stock.logo} alt="" width={22} height={22} className={`${stock.logo.startsWith("data:") ? "rounded-md" : "rounded-full"} bg-card`} referrerPolicy="no-referrer" />
                     ) : null}
                     {stock.symbol}
-                    <span className="font-normal text-xs opacity-80">{chain === "base" ? "Coinbase stock" : "Robinhood stock"}</span>
+                    <span className="font-normal text-xs opacity-80">{CHAIN_COPY[chain].stockBadge}</span>
                     <span className="font-normal text-xs opacity-80">{stock.name}</span>
                     {stock.usd ? <span className="font-mono text-xs opacity-80">{fmtUsd(stock.usd)}</span> : null}
                     <button
@@ -550,10 +564,10 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       </button>
                     </li>
                   ))}
-                  {stockHits.length === 0 ? <li className="text-xs text-muted">{chain === "base" ? "No match. 13 Coinbase tokenized stocks are available on Base: NVDAc, AAPLc, TSLAc, METAc, GOOGLc, AMZNc, MSFTc, MSTRc, COINc, CRCLc, INTCc, SNDKc, SPCXc." : "No match. 194 Robinhood Stock Tokens are available, e.g. AAPL, TSLA, NVDA, SPY."}</li> : null}
+                  {stockHits.length === 0 ? <li className="text-xs text-muted">{CHAIN_COPY[chain].stockEmpty}</li> : null}
                 </ul>
               ) : null}
-              <p className={helper}>{stockIssuerDisclaimer(chain)}</p>
+              <p className={helper}>{CHAIN_COPY[chain].stockIssuer}</p>
             </div>
           ) : null}
         </section>

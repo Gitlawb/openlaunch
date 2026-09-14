@@ -1,8 +1,9 @@
 /** Pure search / filter helpers (client + server; node --test loads this directly). */
 import { newestFirst } from "./paging";
+import type { ChainKey } from "../chainKeys.ts";
 export type LaunchFilter = "fee0" | "burn" | "usdg" | "gitlawb" | "today";
 /** `chain`: the filter only makes sense on that chain (its quote is not offered elsewhere) → hidden when another chain is selected. */
-export const FILTERS: { key: LaunchFilter; label: string; title: string; chain?: "base" | "robinhood" }[] = [
+export const FILTERS: { key: LaunchFilter; label: string; title: string; chain?: ChainKey }[] = [
   { key: "fee0", label: "0% fee", title: "feeless pools" },
   { key: "burn", label: "fees burned", title: "no beneficiary; every fee is burned" },
   { key: "usdg", label: "USDG", title: "priced in USDG (Robinhood Chain)", chain: "robinhood" },

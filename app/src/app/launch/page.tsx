@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import LaunchForm from "@/components/launchpad/LaunchForm";
 import { ethUsd } from "@/lib/launchpad/ethPrice";
 import { gitlawbUsd } from "@/lib/launchpad/gitlawbServer";
-import { isChainKey } from "@/lib/chainPublic";
+import { DEFAULT_CHAIN, chainKeyOr } from "@/lib/chainPublic";
 
 export const metadata: Metadata = {
   title: "Launch a token for free",
@@ -21,7 +21,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
           <h1 className="font-display font-bold tracking-[-0.02em] text-ink text-3xl sm:text-4xl">Launch a token</h1>
           <p className="mt-2 text-base text-body">Pick a chain, fill this in, sign once, done. No platform fee. You only pay gas.</p>
         </header>
-        <LaunchForm ethUsd={usd} gitlawbUsd={gitlawb} initialChain={isChainKey(sp.chain) ? sp.chain : "base"} />
+        <LaunchForm ethUsd={usd} gitlawbUsd={gitlawb} initialChain={chainKeyOr(sp.chain, DEFAULT_CHAIN)} />
       </main>
     </>
   );

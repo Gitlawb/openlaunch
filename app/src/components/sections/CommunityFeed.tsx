@@ -8,7 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/vendor/toggle-group";
 import TokenAvatar from "@/components/launchpad/TokenAvatar";
 import WalletAvatar from "@/components/WalletAvatar";
 import { useLive } from "@/components/launchpad/LiveProvider";
-import { CHAIN_SHORT, shortAddr, type ChainKey } from "@/lib/chainPublic";
+import { CHAIN_KEYS, CHAIN_SHORT, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { ago, nowMs } from "@/lib/launchpad/time";
 import type { PostRow } from "@/lib/launchpad/postsServer";
 import { communityFingerprint, filterCommunityPosts } from "@/lib/launchpad/community-feed";
@@ -57,8 +57,7 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
       <div className={styles.filters}>
         <ToggleGroup multiple={false} value={[chain ?? "all"]} onValueChange={(values) => { if (values[0]) setChain(values[0] === "all" ? null : values[0] as ChainKey); }} aria-label="Filter posts by chain">
           <ToggleGroupItem value="all" className="min-h-11">All chains</ToggleGroupItem>
-          <ToggleGroupItem value="base" className="min-h-11">Base</ToggleGroupItem>
-          <ToggleGroupItem value="robinhood" className="min-h-11">Robinhood</ToggleGroupItem>
+          {CHAIN_KEYS.map((k) => <ToggleGroupItem key={k} value={k} className="min-h-11">{CHAIN_SHORT[k]}</ToggleGroupItem>)}
         </ToggleGroup>
         <div className={styles.search}>
           <Search size={15} aria-hidden="true" />

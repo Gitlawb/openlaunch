@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { SITE_URL } from "@/lib/chainPublic";
+import { CHAIN_IDS, CHAIN_KEYS, SITE_URL, chainKeyOf } from "@/lib/chainPublic";
 import { maybeDb } from "@/lib/db";
 import { staticSitemapEntries, tokenSitemapEntries, type TokenRow } from "@/lib/seo";
 
@@ -23,17 +23,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       const rows = (await sql`
         SELECT chain_id, token, block_time
         FROM bb_launches
-        WHERE chain_id IN (8453, 4663)
+        WHERE chain_id IN ${sql(CHAIN_KEYS.map((k) => CHAIN_IDS[k]))}
         ORDER BY block_time DESC
         LIMIT 1000
       `) as unknown as { chain_id: number; token: string; block_time: string | null }[];
-      tokens = rows
-        .map((r) => ({
-          chain: r.chain_id === 4663 ? ("robinhood" as const) : ("base" as const),
-          token: String(r.token ?? "").toLowerCase(),
-          block_time: r.block_time,
-        }))
-        .filter((r) => /^0x[0-9a-f]{40}$/.test(r.token));
+      tokens = rows.flatMap((r) => {
+        const chain = chainKeyOf(r.chain_id);
+        const token = String(r.token ?? "").toLowerCase();
+        return chain && /^0x[0-9a-f]{40}$/.test(token) ? [{ chain, token, block_time: r.block_time }] : [];
+      });
     }
   } catch {
     tokens = [];

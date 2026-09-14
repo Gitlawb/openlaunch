@@ -110,12 +110,23 @@ export const MCAP_PRESETS: Record<Quote["key"], number[]> = { eth: [1, 5, 10, 25
 /** Buy amount presets per quote. */
 export const BUY_PRESETS: Record<Quote["key"], string[]> = { eth: ["0.01", "0.05", "0.1", "0.5"], usdg: ["5", "25", "100", "500"], gitlawb: ["100000", "500000", "1000000", "5000000"], stock: ["0.1", "0.5", "1", "5"] };
 
+// NEXT_PUBLIC_* must be read as literal `process.env.X` expressions: Next inlines them at build time.
+const DEV_RPC: Record<ChainKey, string | undefined> = {
+  base: process.env.NEXT_PUBLIC_RPC_URL_BASE,
+  robinhood: process.env.NEXT_PUBLIC_RPC_URL_ROBINHOOD,
+};
+
 /** Browser RPC: dev override per chain, else our same-origin proxy (→ Alchemy/public, key stays server-side). */
 export function browserRpc(key: ChainKey): string {
-  const dev = (key === "base" ? process.env.NEXT_PUBLIC_RPC_URL_BASE : process.env.NEXT_PUBLIC_RPC_URL_ROBINHOOD)?.trim();
-  return dev || `${SITE_URL}/api/rpc?chain=${key}`;
+  return DEV_RPC[key]?.trim() || `${SITE_URL}/api/rpc?chain=${key}`;
 }
 
+/** Where a token trades outside this site, per chain. */
+export const SWAP_SITES: Record<ChainKey, { name: string; url: (token: string) => string }> = {
+  base: { name: "Uniswap", url: (t) => `https://app.uniswap.org/swap?chain=base&outputCurrency=${t}` },
+  robinhood: { name: "pools.trade", url: (t) => `https://pools.trade/token/${t}` },
+};
+
 export function uniswapSwapUrl(key: ChainKey, token: string): string {
-  return key === "base" ? `https://app.uniswap.org/swap?chain=base&outputCurrency=${token}` : `https://pools.trade/token/${token}`;
+  return SWAP_SITES[key].url(token);
 }

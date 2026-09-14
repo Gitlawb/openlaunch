@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isChainKey } from "@/lib/chainPublic";
 import { launchpad } from "@/lib/launchpad/config";
-import { ensureRegistry, stockList, stockPrices } from "@/lib/launchpad/stocksServer";
+import { STOCK_SOURCE, ensureRegistry, stockList, stockPrices } from "@/lib/launchpad/stocksServer";
 import { searchStocks } from "@/lib/launchpad/stocks";
 import { searchBaseStocks, stockTileSvg } from "@/lib/launchpad/baseStocks";
 import { memo } from "@/lib/launchpad/memo";
@@ -24,7 +24,9 @@ export async function GET(req: Request) {
   const fixed = launchpad(chain).quotes.map((x) => ({ ...x, usd: x.key === "gitlawb" ? gl : x.usd }));
   const stocks = await memo(`quotes:stocks:${chain}:${q.toUpperCase()}`, 30_000, async () => {
     let hits: { address: string; symbol: string; name: string; decimals: number; logo: string | null }[];
-    if (chain === "base") hits = searchBaseStocks(q, 13).map((s) => ({ ...s, logo: stockTileSvg(s.symbol) }));
+    const source = STOCK_SOURCE[chain];
+    if (source === null) return [];
+    if (source === "coinbase-b20") hits = searchBaseStocks(q, 13).map((s) => ({ ...s, logo: stockTileSvg(s.symbol) }));
     else {
       if (!(await ensureRegistry())) return [];
       hits = searchStocks(

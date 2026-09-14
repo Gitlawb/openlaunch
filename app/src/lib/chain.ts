@@ -7,9 +7,13 @@ export * from "./chainPublic";
 /** SERVER chain access. BASE_RPC_URL / ROBINHOOD_RPC_URL override the chains' public RPCs. */
 const cached = new Map<ChainKey, PublicClient>();
 
+const RPC_ENV: Record<ChainKey, () => string | undefined> = {
+  base: () => process.env.BASE_RPC_URL,
+  robinhood: () => process.env.ROBINHOOD_RPC_URL,
+};
+
 export function rpcUrl(key: ChainKey): string | undefined {
-  const v = key === "base" ? process.env.BASE_RPC_URL : process.env.ROBINHOOD_RPC_URL;
-  return v?.trim() || undefined;
+  return RPC_ENV[key]()?.trim() || undefined;
 }
 
 /**

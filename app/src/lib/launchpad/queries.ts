@@ -1,10 +1,10 @@
 import "server-only";
 import { maybeDb } from "@/lib/db";
-import { CHAIN_KEYS, chainIdOf, chainKeyOf, type ChainKey } from "@/lib/chainPublic";
+import { CHAIN_KEYS, DEFAULT_CHAIN, chainIdOf, chainKeyOf, type ChainKey } from "@/lib/chainPublic";
 import { quoteInfo as staticQuoteInfo, quoteUsdOf, type Quote } from "./config";
 import { ensureRegistry, stockByAddress, stockUsdInUse } from "./stocksServer";
 import { gitlawbUsd } from "./gitlawbServer";
-import { GITLAWB_ADDRESS, GITLAWB_ADDRESS_ROBINHOOD } from "./gitlawb";
+import { GITLAWB_ADDRESSES } from "./gitlawb";
 import { canonicalImageUrl } from "./images";
 import { GRACE_HOURS, LIVE_WINDOW_HOURS, rankTrending, type LiveTier } from "./ranking";
 import { SNIPER_BLOCKS } from "./holders";
@@ -126,7 +126,7 @@ function shape(raw: Raw & { last_swap_block?: bigint; last_swap_log?: number; lo
   // drop indexer-only bigint columns so the row is JSON-safe
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { last_swap_block, last_swap_log, log_index, holders_synced_block, ...r } = raw;
-  const chain = chainKeyOf(r.chain_id) ?? "base";
+  const chain = chainKeyOf(r.chain_id) ?? DEFAULT_CHAIN;
   const q = quoteInfo(chain, r.quote);
   const supply = BigInt(r.supply);
   const tick = r.tick ?? r.start_tick;
@@ -202,8 +202,6 @@ export const VOLUME_WINDOWS: VolumeWindow[] = ["1h", "24h", "all"];
 
 export type ListOpts = { sort?: LaunchSort; window?: VolumeWindow; chain?: ChainKey | null; filter?: LaunchFilter | null; limit?: number; offset?: number; launcher?: string; ethUsd?: number | null };
 const USDG_ADDR = "0x5fc5360d0400a0fd4f2af552add042d716f1d168";
-const BASE_ID = chainIdOf("base");
-const RH_ID = chainIdOf("robinhood");
 const NATIVE_ADDR = "0x0000000000000000000000000000000000000000";
 const DEAD_ADDR = "0x000000000000000000000000000000000000dead";
 
@@ -240,7 +238,8 @@ export async function listLaunchesPage(opts: ListOpts = {}): Promise<ListPage> {
   if (opts.filter === "burn") conds.push(db`l.lp_fee > 0 AND jsonb_array_length(l.recipients) = 1 AND lower(l.recipients->0->>'payout') = ${DEAD_ADDR}`);
   if (opts.filter === "usdg") conds.push(db`l.quote = ${USDG_ADDR}`);
   // GITLAWB has a different address per chain; each match is chain-scoped so a same-address token elsewhere is never GITLAWB
-  const isGitlawb = () => db`((l.chain_id = ${BASE_ID} AND l.quote = ${GITLAWB_ADDRESS}) OR (l.chain_id = ${RH_ID} AND l.quote = ${GITLAWB_ADDRESS_ROBINHOOD}))`;
+  const gitlawbArms = CHAIN_KEYS.flatMap((k) => (GITLAWB_ADDRESSES[k] ? [db`(l.chain_id = ${chainIdOf(k)} AND l.quote = ${GITLAWB_ADDRESSES[k]})`] : []));
+  const isGitlawb = () => (gitlawbArms.length ? db`(${gitlawbArms.reduce((a, c) => db`${a} OR ${c}`)})` : db`false`);
   if (opts.filter === "gitlawb") conds.push(db`${isGitlawb()}`);
   if (opts.filter === "today") conds.push(db`l.block_time > now() - interval '24 hours'`);
   const where = conds.length ? db`WHERE ${conds.reduce((a, c) => db`${a} AND ${c}`)}` : db``;
@@ -248,7 +247,7 @@ export async function listLaunchesPage(opts: ListOpts = {}): Promise<ListPage> {
   const stockCase = stockEntries.length ? stockEntries.map(([a, v]) => db`WHEN l.quote = ${a} THEN ${v}::double precision`).reduce((acc, c) => db`${acc} ${c}`) : db``;
   const gitlawbFactor = gitlawbUsdNow !== null && gitlawbUsdNow > 0 ? gitlawbUsdNow : 0; // unknown → 0 weight, like an unknown stock
   const usdPerUnit = db`(CASE WHEN l.quote = ${USDG_ADDR} THEN 1.0 ${stockCase} WHEN ${isGitlawb()} THEN ${gitlawbFactor}::double precision WHEN l.quote = ${NATIVE_ADDR} THEN ${ethFactor}::double precision ELSE 0.0 END)`;
-  const stockDec = stockEntries.map(([a]) => [a, stockByAddress("base", a)?.decimals ?? stockByAddress("robinhood", a)?.decimals ?? 18] as [string, number]).filter(([, d]) => d !== 18);
+  const stockDec = stockEntries.map(([a]) => [a, CHAIN_KEYS.map((k) => stockByAddress(k, a)?.decimals).find((d) => d !== undefined) ?? 18] as [string, number]).filter(([, d]) => d !== 18);
   const decCase = stockDec.length ? stockDec.map(([a, d]) => db`WHEN l.quote = ${a} THEN ${d}`).reduce((acc, c) => db`${acc} ${c}`) : db``;
   const qd = db`(CASE WHEN l.quote = ${USDG_ADDR} THEN 6 ${decCase} ELSE 18 END)`;
   const volCol = win === "1h" ? db`w1.v::numeric` : win === "24h" ? db`w24.v::numeric` : db`l.volume_quote`;
@@ -342,7 +341,7 @@ export async function getLaunchFeed(limit = 24, ethUsd: number | null = null): P
         JOIN bb_launches l ON l.chain_id = s.chain_id AND l.token = s.token LEFT JOIN bb_launch_meta m ON m.chain_id = l.chain_id AND m.token = l.token)
     ) x ORDER BY at DESC LIMIT ${n}`; // each arm pre-limited on an indexed time column: the union never scans the whole swaps table
   return rows.map((r) => {
-    const chain = chainKeyOf(r.chain_id) ?? "base";
+    const chain = chainKeyOf(r.chain_id) ?? DEFAULT_CHAIN;
     if (r.kind === "launch") return { kind: "launch", chain, at: r.at, tx_hash: r.tx_hash, token: r.token, name: r.name, symbol: r.symbol, launcher: r.who ?? "", lp_fee: r.lp_fee ?? 0, quote_key: quoteInfo(chain, r.quote).key, image_url: canonicalImageUrl(r.image_url, imagePublicBase()) };
     const q = quoteInfo(chain, r.quote);
     const qu = quoteUsd(q, ethUsd);
@@ -377,7 +376,7 @@ export async function getLaunchTotals(ethUsd: number | null = null): Promise<Lau
     fees_to_creators_usd: 0,
     usd_partial: false,
     gitlawb_burned: "0",
-    by_chain: { base: { launches: 0, trades: 0, volume_quote_eth: "0", volume_quote_usdg: "0", volume_quote_gitlawb: "0" }, robinhood: { launches: 0, trades: 0, volume_quote_eth: "0", volume_quote_usdg: "0", volume_quote_gitlawb: "0" } },
+    by_chain: Object.fromEntries(CHAIN_KEYS.map((k) => [k, { launches: 0, trades: 0, volume_quote_eth: "0", volume_quote_usdg: "0", volume_quote_gitlawb: "0" }])) as LaunchTotals["by_chain"],
   });
   const db = maybeDb();
   if (!db) return empty();
@@ -542,7 +541,7 @@ export async function getWalletTrades(wallet: string, ethUsd: number | null = nu
       FROM bb_launch_swaps s JOIN bb_launches l ON l.chain_id = s.chain_id AND l.token = s.token
      WHERE s.trader = ${wallet.toLowerCase()} ORDER BY s.block_number DESC, s.log_index DESC LIMIT ${Math.min(200, limit)}`;
   return rows.map((r) => {
-    const chain = chainKeyOf(r.chain_id) ?? "base";
+    const chain = chainKeyOf(r.chain_id) ?? DEFAULT_CHAIN;
     const q = quoteInfo(chain, r.quote);
     const qu = quoteUsd(q, ethUsd);
     const raw = BigInt(r.amount0) < 0n ? (-BigInt(r.amount0)).toString() : r.amount0;
