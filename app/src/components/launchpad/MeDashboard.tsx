@@ -15,7 +15,7 @@ import { toast } from "./TxToasts";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/vendor/tabs";
 import { LAUNCH_LOCKER_ABI, ERC20_MIN_ABI } from "@/lib/launchpad/abi";
 import { launchpad } from "@/lib/launchpad/config";
-import { earnedSides, feeShareBps, feeSidesUsd, hasFees, holdingUsd, isBurnOnly, type FeeSides } from "@/lib/launchpad/creator";
+import { earnedSides, feeShareBps, hasFees, holdingUsd, isBurnOnly, type FeeSides } from "@/lib/launchpad/creator";
 import { fmtCompact, fmtQuote, fmtTokens, fmtUsd } from "@/lib/launchpad/math";
 import { capDisplay } from "@/lib/launchpad/market-cap";
 import type { LaunchRow, WalletTrade } from "@/lib/launchpad/queries";
@@ -180,7 +180,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
   }
 
   const collectable = me ? me.launches.filter((l) => hasFees(pending[key(l)])) : [];
-  const earnedUsd = me ? me.launches.reduce((a, l) => a + (feeSidesUsd(earnedSides(l, feeShareBps(l.recipients, address)), l.quote_decimals, l.price_quote, l.quote_usd) ?? 0), 0) : 0;
+  const earnedUsd = me ? me.launches.reduce((a, l) => a + (l.quote_usd === null ? 0 : (Number(earnedSides(l, feeShareBps(l.recipients, address)).quote) / 10 ** l.quote_decimals) * l.quote_usd), 0) : 0;
   const holdingsUsd = me ? me.tokens.reduce((a, t) => a + (holdingUsd(balances[key(t)] ?? 0n, t.price_quote, t.quote_usd) ?? 0), 0) : 0;
   const holdingsReading = me?.tokens.some((t) => balances[key(t)] === undefined) ?? false;
   const holdingsUnknown = me?.tokens.some((t) => balances[key(t)] === null || (balances[key(t)] !== undefined && holdingUsd(balances[key(t)]!, t.price_quote, t.quote_usd) === null)) ?? false;
@@ -234,7 +234,6 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
           {me?.launches.map((l) => {
             const share = feeShareBps(l.recipients, address);
             const earned = earnedSides(l, share);
-            const earnedUsdRow = feeSidesUsd(earned, l.quote_decimals, l.price_quote, l.quote_usd);
             const p = pending[key(l)];
             const k = key(l);
             return (
@@ -257,8 +256,8 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
                     </div>
                   </Link>
                   <div className={styles.figure}>
-                    <div className="text-up font-bold" title={`${fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)} + ${fmtTokens(earned.token)} ${l.symbol}`}>{earnedUsdRow !== null ? `${earned.token > 0n ? "≈ " : ""}${fmtUsd(earnedUsdRow)}` : fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)}</div>
-                    {earnedUsdRow === null && earned.token > 0n ? <div className="text-up font-bold">{fmtTokens(earned.token)} {l.symbol}</div> : null}
+                    <div className="text-up font-bold">{fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)}</div>
+                    {earned.token > 0n ? <div className="text-up font-bold">{fmtTokens(earned.token)} {l.symbol}</div> : null}
                     <div className="text-[11px] text-muted">earned · {share / 100}% share</div>
                   </div>
                   <div className={styles.figure}>

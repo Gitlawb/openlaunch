@@ -29,12 +29,6 @@ export function earnedSides(
   return { quote: earnedRaw(l.fees_quote_collected, l.fees_quote_burned, shareBps), token: earnedRaw(l.fees_token_collected, l.fees_token_burned, shareBps) };
 }
 
-/** USD value of a fee pair: token side priced at the pool price (whole quote per token, 18-decimal token). Null without a quote USD price. */
-export function feeSidesUsd(sides: FeeSides, quoteDecimals: number, priceQuote: number, quoteUsd: number | null): number | null {
-  if (quoteUsd === null) return null;
-  return (Number(sides.quote) / 10 ** quoteDecimals + (Number(sides.token) / 1e18) * priceQuote) * quoteUsd;
-}
-
 /** Whether a launch burns everything (no beneficiary). */
 export function isBurnOnly(recipients: Recipient[]): boolean {
   return recipients.length === 1 && recipients[0].payout.toLowerCase() === DEAD;

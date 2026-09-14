@@ -83,9 +83,10 @@ test("dashboard fees cover both pool sides: quote and the launched token", () =>
   assert.match(source, /p\[key\(l\)\] = \{ quote: result\[0\], token: result\[1\] \}/);
   assert.match(source, /filter\(\(l\) => hasFees\(pending\[key\(l\)\]\)\)/);
   assert.match(source, /disabled=\{busy !== null \|\| !hasFees\(p\)\}/);
-  // earned (total and per row) prices the token share too, and marks it as an estimate
-  assert.match(source, /feeSidesUsd\(earnedSides\(l, feeShareBps\(l\.recipients, address\)\), l\.quote_decimals, l\.price_quote, l\.quote_usd\)/);
-  assert.match(source, /earned\.token > 0n \? "≈ " : ""/);
+  // earned shows both amounts; the token share is not priced into USD
+  assert.match(source, /fmtQuote\(earned\.quote, l\.quote_decimals, l\.quote_symbol\)/);
+  assert.match(source, /fmtTokens\(earned\.token\)/);
+  assert.doesNotMatch(source, /feeSidesUsd|≈ /);
   assert.match(source, /fmtTokens\(p\.token\)/);
   assert.doesNotMatch(source, /earnedRaw\(l\.fees_quote_collected/);
 });
