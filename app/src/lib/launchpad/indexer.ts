@@ -61,19 +61,23 @@ async function timeOf(chain: ChainKey, block: bigint): Promise<string> {
   return iso;
 }
 const txFrom = new Map<string, string>();
+/** Transaction sender, lower-cased. Null when the RPC fails twice; the swap is then stored without a trader and `healSwapTraders` retries later. */
 async function fromOf(chain: ChainKey, hash: Hex): Promise<string | null> {
   const k = `${chain}:${hash}`;
   const hit = txFrom.get(k);
   if (hit) return hit;
-  try {
-    const tx = await publicClient(chain).getTransaction({ hash });
-    const f = tx.from.toLowerCase();
-    if (txFrom.size > 5000) txFrom.clear();
-    txFrom.set(k, f);
-    return f;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const tx = await publicClient(chain).getTransaction({ hash });
+      const f = tx.from.toLowerCase();
+      if (txFrom.size > 5000) txFrom.clear();
+      txFrom.set(k, f);
+      return f;
+    } catch {
+      // a busy launch block can rate-limit the node; one more try before giving up
+    }
   }
+  return null;
 }
 
 // ── apply ────────────────────────────────────────────────────────────────────
@@ -175,23 +179,26 @@ async function applyFeeIn(db: Db, chain: ChainKey, cid: number, time: string, lo
   }
   if (log.eventName === "Burned") {
     const info = tokenIdToToken.get(log.args.tokenId.toString());
+    // Unknown position = the launch itself is not indexed yet (receipt path racing the poller). Inserting now would
+    // pin the row with token NULL and skip the launch totals for good (the poller's later pass hits ON CONFLICT and
+    // the rebuild script joins on token), so leave it for the poller, which indexes the launch first.
+    if (!info) return false;
     const cur = log.args.currency.toLowerCase();
     const r = await db`
       INSERT INTO bb_launch_fee_events (chain_id, tx_hash, log_index, kind, token_id, token, currency, amount, block_number, block_time)
-      VALUES (${cid}, ${tx}, ${li}, 'burned', ${log.args.tokenId}, ${info?.token ?? null}, ${cur}, ${log.args.amount.toString()}, ${bn}, ${time})
+      VALUES (${cid}, ${tx}, ${li}, 'burned', ${log.args.tokenId}, ${info.token}, ${cur}, ${log.args.amount.toString()}, ${bn}, ${time})
       ON CONFLICT DO NOTHING RETURNING tx_hash`;
     if (r.length === 0) return false;
-    if (info) {
-      if (cur === info.quote) await db`UPDATE bb_launches SET fees_quote_burned = fees_quote_burned + ${log.args.amount.toString()}::numeric WHERE chain_id = ${cid} AND token = ${info.token}`;
-      else await db`UPDATE bb_launches SET fees_token_burned = fees_token_burned + ${log.args.amount.toString()}::numeric WHERE chain_id = ${cid} AND token = ${info.token}`;
-    }
+    if (cur === info.quote) await db`UPDATE bb_launches SET fees_quote_burned = fees_quote_burned + ${log.args.amount.toString()}::numeric WHERE chain_id = ${cid} AND token = ${info.token}`;
+    else await db`UPDATE bb_launches SET fees_token_burned = fees_token_burned + ${log.args.amount.toString()}::numeric WHERE chain_id = ${cid} AND token = ${info.token}`;
     return true;
   }
   if (log.eventName === "Paid") {
     const info = tokenIdToToken.get(log.args.tokenId.toString());
+    if (!info) return false; // same as Burned: the poller fills it in once the launch is indexed
     const r = await db`
       INSERT INTO bb_launch_fee_events (chain_id, tx_hash, log_index, kind, token_id, token, currency, account, amount, block_number, block_time)
-      VALUES (${cid}, ${tx}, ${li}, 'paid', ${log.args.tokenId}, ${info?.token ?? null}, ${log.args.currency.toLowerCase()}, ${log.args.account.toLowerCase()}, ${log.args.amount.toString()}, ${bn}, ${time})
+      VALUES (${cid}, ${tx}, ${li}, 'paid', ${log.args.tokenId}, ${info.token}, ${log.args.currency.toLowerCase()}, ${log.args.account.toLowerCase()}, ${log.args.amount.toString()}, ${bn}, ${time})
       ON CONFLICT DO NOTHING RETURNING tx_hash`;
     return r.length > 0;
   }
@@ -399,6 +406,7 @@ export async function pollAll(): Promise<Record<string, LaunchSyncResult>> {
     CONFIGURED_CHAINS.map(async (c) => {
       out[c] = await pollLaunches(c).catch((e): LaunchSyncResult => ({ status: "skipped", reason: errMessage(e) }));
       await healLaunchReads(c).catch((e) => console.warn(`[launch-sync] heal ${c}:`, errMessage(e)));
+      await healSwapTraders(c).catch((e) => console.warn(`[launch-sync] heal traders ${c}:`, errMessage(e)));
       await backfillHolders(c).catch((e) => console.warn(`[launch-sync] holders backfill ${c}:`, errMessage(e)));
     }),
   );
@@ -447,6 +455,30 @@ export async function healLaunchReads(chain: ChainKey): Promise<number> {
     healed++;
   }
   if (healed) console.log(`[launch-sync] healed ${healed} launch row(s) on ${chain}`);
+  return healed;
+}
+
+/**
+ * Self-heal swaps stored without a trader (the sender lookup failed at index time, typically a rate-limited
+ * node during a busy launch block). Those rows carry no wallet facts: the holder panel skips them and the
+ * ranking cannot tell whether they were outside trades. Re-reads a bounded batch of the newest ones per poll.
+ */
+export async function healSwapTraders(chain: ChainKey): Promise<number> {
+  const db = maybeDb();
+  if (!db || skipReason(chain)) return 0;
+  const cid = chainIdOf(chain);
+  const rows = await db<{ tx_hash: string }[]>`
+    SELECT tx_hash FROM bb_launch_swaps
+     WHERE chain_id = ${cid} AND trader IS NULL GROUP BY tx_hash ORDER BY max(block_number) DESC LIMIT 20`;
+  if (rows.length === 0) return 0;
+  let healed = 0;
+  for (const r of rows) {
+    const trader = await fromOf(chain, r.tx_hash as Hex);
+    if (!trader) continue;
+    await db`UPDATE bb_launch_swaps SET trader = ${trader} WHERE chain_id = ${cid} AND tx_hash = ${r.tx_hash} AND trader IS NULL`;
+    healed++;
+  }
+  if (healed) console.log(`[launch-sync] healed traders on ${healed} swap tx(s) on ${chain}`);
   return healed;
 }
 

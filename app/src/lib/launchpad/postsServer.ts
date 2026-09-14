@@ -56,15 +56,24 @@ function shape(r: RawPost): PostRow {
   return { id: Number(r.id), chain: chainKeyOf(r.chain_id) ?? "base", token: r.token, wallet: r.wallet, parent_id: r.parent_id === null ? null : Number(r.parent_id), body: r.body, tag: (r.tag as Tag) ?? null, created_at: r.created_at, reports: r.reports, hidden: r.hidden, symbol: r.symbol, name: r.name };
 }
 
-export async function listTokenPosts(chain: ChainKey, token: string, limit = 100): Promise<{ posts: PostRow[]; muted: boolean }> {
+export async function listTokenPosts(chain: ChainKey, token: string, limit = 100, beforeId: number | null = null): Promise<{ posts: PostRow[]; muted: boolean; nextCursor: number | null }> {
   const db = maybeDb();
-  if (!db) return { posts: [], muted: false };
+  if (!db) return { posts: [], muted: false, nextCursor: null };
   const cid = chainIdOf(chain);
+  const n = Math.min(300, Math.max(1, Math.trunc(limit) || 100));
+  // Both pages order by id DESC — the same key as the `id < beforeId`
+  // continuation predicate. Ordering by created_at DESC instead would skip or
+  // repeat rows across pages whenever id order and timestamp order disagree
+  // (same-second inserts, backfilled rows). ids are monotonic with insertion,
+  // so newest-first is preserved.
   const [rows, st] = await Promise.all([
-    db<RawPost[]>`SELECT id, chain_id, token, wallet, parent_id, body, tag, created_at, reports, hidden FROM bb_posts WHERE chain_id = ${cid} AND token = ${token.toLowerCase()} AND NOT hidden ORDER BY created_at DESC LIMIT ${Math.min(300, limit)}`,
+    beforeId !== null && Number.isInteger(beforeId) && beforeId > 0
+      ? db<RawPost[]>`SELECT id, chain_id, token, wallet, parent_id, body, tag, created_at, reports, hidden FROM bb_posts WHERE chain_id = ${cid} AND token = ${token.toLowerCase()} AND NOT hidden AND id < ${beforeId} ORDER BY id DESC LIMIT ${n}`
+      : db<RawPost[]>`SELECT id, chain_id, token, wallet, parent_id, body, tag, created_at, reports, hidden FROM bb_posts WHERE chain_id = ${cid} AND token = ${token.toLowerCase()} AND NOT hidden ORDER BY id DESC LIMIT ${n}`,
     db<{ comments_muted: boolean }[]>`SELECT comments_muted FROM bb_token_settings WHERE chain_id = ${cid} AND token = ${token.toLowerCase()}`,
   ]);
-  return { posts: rows.map(shape), muted: st[0]?.comments_muted ?? false };
+  const posts = rows.map(shape);
+  return { posts, muted: st[0]?.comments_muted ?? false, nextCursor: posts.length < n ? null : Number(posts[posts.length - 1]?.id ?? 0) || null };
 }
 
 /** Global human feed: latest top-level posts across all tokens, with token names. */

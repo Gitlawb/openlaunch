@@ -370,10 +370,17 @@ export async function getLaunchFeed(limit = 24, ethUsd: number | null = null): P
 export type LaunchTotals = {
   launches: number;
   trades: number;
-  /** USD sums across chains (null parts skipped when the ETH price is unknown). */
+  /** USD sums across chains. A quote with no price right now contributes nothing; `usd_partial` says when that happened. */
   volume_usd: number;
   fees_burned_usd: number;
   fees_to_creators_usd: number;
+  /** True when a quote that normally prices had none for a launch with volume or fees (cold start, a price feed down >15 min), so the USD sums undercount right now. */
+  usd_partial: boolean;
+  /**
+   * GITLAWB sent to 0x…dEaD by launches quoted in it, raw 18-dec, Base + Robinhood combined: one token, one supply
+   * bridged across two chains, so one figure and no per-chain split. Shown as an amount, never in USD.
+   */
+  gitlawb_burned: string;
   by_chain: Record<ChainKey, { launches: number; trades: number; volume_quote_eth: string; volume_quote_usdg: string; volume_quote_gitlawb: string }>;
 };
 
@@ -384,6 +391,8 @@ export async function getLaunchTotals(ethUsd: number | null = null): Promise<Lau
     volume_usd: 0,
     fees_burned_usd: 0,
     fees_to_creators_usd: 0,
+    usd_partial: false,
+    gitlawb_burned: "0",
     by_chain: { base: { launches: 0, trades: 0, volume_quote_eth: "0", volume_quote_usdg: "0", volume_quote_gitlawb: "0" }, robinhood: { launches: 0, trades: 0, volume_quote_eth: "0", volume_quote_usdg: "0", volume_quote_gitlawb: "0" } },
   });
   const db = maybeDb();
@@ -395,11 +404,16 @@ export async function getLaunchTotals(ethUsd: number | null = null): Promise<Lau
            COALESCE(sum(fees_quote_collected - fees_quote_burned), 0)::text AS creators
       FROM bb_launches GROUP BY chain_id, quote`;
   const t = empty();
+  const add = (a: string, b: string) => (BigInt(a) + BigInt(b)).toString();
   for (const r of rows) {
     const chain = chainKeyOf(r.chain_id);
     if (!chain) continue;
     const q = quoteInfo(chain, r.quote);
-    const qu = quoteUsd(q, ethUsd) ?? 0;
+    const usd = quoteUsd(q, ethUsd);
+    const qu = usd ?? 0;
+    // a quote that normally prices (ETH, GITLAWB, a registry stock) but has no price this instant → the USD sums undercount;
+    // an ERC-20 no registry knows (symbol "?") is unpriced by design and is left out of the USD figures silently, as always
+    if (usd === null && q.symbol !== "?" && (BigInt(r.volume) > 0n || BigInt(r.burned) > 0n || BigInt(r.creators) > 0n)) t.usd_partial = true;
     t.launches += Number(r.launches);
     t.trades += Number(r.trades);
     t.volume_usd += units(r.volume, q.decimals) * qu;
@@ -408,9 +422,13 @@ export async function getLaunchTotals(ethUsd: number | null = null): Promise<Lau
     const bc = t.by_chain[chain];
     bc.launches += Number(r.launches);
     bc.trades += Number(r.trades);
-    if (q.address.toLowerCase() === NATIVE_ADDR) bc.volume_quote_eth = (BigInt(bc.volume_quote_eth) + BigInt(r.volume)).toString();
-    else if (q.key === "usdg") bc.volume_quote_usdg = (BigInt(bc.volume_quote_usdg) + BigInt(r.volume)).toString();
-    else if (q.key === "gitlawb") bc.volume_quote_gitlawb = (BigInt(bc.volume_quote_gitlawb) + BigInt(r.volume)).toString();
+    if (q.address.toLowerCase() === NATIVE_ADDR) bc.volume_quote_eth = add(bc.volume_quote_eth, r.volume);
+    else if (q.key === "usdg") bc.volume_quote_usdg = add(bc.volume_quote_usdg, r.volume);
+    else if (q.key === "gitlawb") {
+      bc.volume_quote_gitlawb = add(bc.volume_quote_gitlawb, r.volume);
+      // GITLAWB is only ever the quote side (never a launched token), so the quote-fee burn is the whole GITLAWB burn
+      t.gitlawb_burned = add(t.gitlawb_burned, r.burned);
+    }
   }
   return t;
 }

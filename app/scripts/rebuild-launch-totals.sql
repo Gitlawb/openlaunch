@@ -36,6 +36,11 @@ UPDATE bb_launches l SET sqrt_price_x96 = x.sqrt_price_x96, tick = x.tick, last_
   FROM (SELECT DISTINCT ON (chain_id, token) chain_id, token, sqrt_price_x96, tick, block_number, log_index
           FROM bb_launch_swaps ORDER BY chain_id, token, block_number DESC, log_index DESC) x
  WHERE l.chain_id = x.chain_id AND l.token = x.token;
+-- fee events written before their launch was indexed carry token NULL; attach them by position id first so
+-- the totals below (which join on token) count them
+UPDATE bb_launch_fee_events e SET token = l.token
+  FROM bb_launches l
+ WHERE e.token IS NULL AND e.token_id IS NOT NULL AND e.chain_id = l.chain_id AND e.token_id = l.token_id;
 -- fee events → collected / burned totals
 UPDATE bb_launches l SET
   fees_quote_collected = f.qc, fees_token_collected = f.tc, fees_quote_burned = f.qb, fees_token_burned = f.tb

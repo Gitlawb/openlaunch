@@ -124,3 +124,21 @@ test("stock quote: one blocking message, a chip that names the issuer, a way out
   // the issuer disclaimer is rendered from one helper for both chains
   assert.match(source, /<p className=\{helper\}>\{stockIssuerDisclaimer\(chain\)\}<\/p>/);
 });
+
+test("beneficiary split: recipients come from the tested helper, and the summary reflects the split", () => {
+  // custom mode is the split editor; its rules live in lib/launchpad/recipients.ts, never inline in the form
+  assert.match(source, /const split = useMemo\(\(\) => buildRecipients\(rows\), \[rows\]\);/);
+  assert.match(source, /if \(feePips > 0 && beneficiary === "custom"\) errors\.push\(\.\.\.split\.errors\);/);
+  assert.match(source, /return split\.recipients;/);
+  // burn names no recipients (the factory registers DEAD: 100%); a 0% fee routes nothing
+  assert.match(source, /if \(feePips === 0 \|\| beneficiary === "burn"\) return \[\];/);
+  // the row count is capped by the locker constant, not a UI literal
+  assert.match(source, /rs\.length >= MAX_RECIPIENTS/);
+  assert.doesNotMatch(source, /isAddress\(customAddr/);
+  // the summary derives its chip and copy from the recipients actually sent, so it cannot disagree with the transaction
+  // an unfinished split previews as a split, not a burn; only a completed list goes through feeModeOf
+  assert.match(source, /const feeMode = feePips > 0 && beneficiary !== "burn" && recipients\.length === 0 \? \(beneficiary === "custom" && rows\.length > 1 \? "split" : "creator"\) : feeModeOf\(feePips, recipients\);/);
+  assert.match(source, /<FeeChip lpFee=\{feePips\} mode=\{feeMode\} \/>/);
+  assert.match(source, /describeShares\(recipients, shortAddr\)/);
+  assert.match(source, /split \$\{recipients\.length \|\| rows\.length\} ways/);
+});

@@ -25,12 +25,24 @@ test("hero separates the permanent position lock from circulating token supply",
 
 test("hero metrics preserve shared live totals without inventing per-chain dollar sums", () => {
   assert.match(metrics, /useLive\(\)/);
-  for (const field of ["launches", "volume_usd", "fees_to_creators_usd", "fees_burned_usd", "trades"]) {
+  for (const field of ["launches", "volume_usd", "fees_to_creators_usd", "fees_burned_usd", "trades", "gitlawb_burned", "usd_partial"]) {
     assert.ok(metrics.includes(`t.${field}`), `missing live total: ${field}`);
   }
   for (const chain of ["base", "robinhood"]) {
     assert.ok(metrics.includes(`t.by_chain.${chain}.launches`), `missing ${chain} launch count`);
   }
+  // while any quote is unpriced the three dollar figures say "≈" with a tooltip instead of a confident undercount
+  assert.match(metrics, /t\.usd_partial \? "≈" : ""/);
+  for (const field of ["volume_usd", "fees_to_creators_usd", "fees_burned_usd"]) assert.ok(metrics.includes(`usd(t.${field}`), `${field} not routed through the ≈ guard`);
+  assert.match(metrics, /no USD price right now/);
+  // the GITLAWB burn: a GITLAWB amount (compact, exact in the title), never a USD figure, no per-chain split, behind the breakdown toggle
+  assert.match(metrics, /fmtQuote\(t\.gitlawb_burned, GITLAWB_DECIMALS, GITLAWB_SYMBOL\)/);
+  assert.match(metrics, /title=\{gitlawbBurnedExact\}/);
+  assert.match(metrics, /fmtUnitsExact\(t\.gitlawb_burned, GITLAWB_DECIMALS\)/, "the title carries every digit of the raw amount (no float, no rounding)");
+  assert.doesNotMatch(metrics, /fmtUsd\([^)]*gitlawb/i, "the GITLAWB burn is never priced in USD");
+  assert.doesNotMatch(metrics, /by_chain\.\w+\.gitlawb_burned/, "no per-chain split for the GITLAWB burn");
+  const details = metrics.indexOf("<details");
+  assert.ok(details >= 0 && metrics.indexOf(">GITLAWB burned<") > details, "the GITLAWB burn stays behind the breakdown toggle");
   assert.match(metrics, /All-time volume/);
   assert.match(metrics, /Fees to recipients/);
   assert.doesNotMatch(metrics, /volume_quote_eth|volume_quote_usdg|\bfetch\s*\(|\bsetInterval\s*\(/);

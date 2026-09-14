@@ -16,7 +16,7 @@ export function feeLabel(lpFee: number, recipients: { payout: string; bps: numbe
   if (lpFee === 0) return "0% fee";
   const pct = `${lpFee / 10_000}%`;
   if (recipients.length === 1 && recipients[0].payout.toLowerCase() === DEAD) return `${pct} fee, burned`;
-  return `${pct} fee → beneficiary`;
+  return `${pct} fee → ${recipients.length > 1 ? "beneficiaries" : "beneficiary"}`;
 }
 
 export function ageLabel(iso: string, now: number): string {

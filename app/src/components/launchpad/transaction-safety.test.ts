@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+import { hasFees } from "@/lib/launchpad/creator";
 
 /**
  * Execute the actual component handlers with inert dependencies. This avoids a
@@ -173,13 +174,14 @@ test("dashboard collection locks before wallet lookup and permits retry after re
   assert.equal(walletLookups, 2);
 });
 
-test("collect-all stops at a rejected item, skips unknown fees and releases its batch lock", async () => {
+test("collect-all includes token-only fees, skips empty or unknown pools and stops at rejection", async () => {
   const collectingBatch = { current: false };
   const items: string[] = [];
   const batches: ({ completed: number; total: number } | null)[] = [];
   const collectAll = handler("./MeDashboard.tsx", "collectAll", {
-    me: { launches: [{ token: "one" }, { token: "unknown" }, { token: "two" }, { token: "three" }] },
-    pending: { one: 1n, unknown: null, two: 2n, three: 3n },
+    me: { launches: [{ token: "one" }, { token: "unknown" }, { token: "empty" }, { token: "two" }, { token: "three" }] },
+    pending: { one: { quote: 0n, token: 1n }, unknown: null, empty: { quote: 0n, token: 0n }, two: { quote: 2n, token: 0n }, three: { quote: 0n, token: 3n } },
+    hasFees,
     key: (launch: { token: string }) => launch.token,
     mounted: { current: true }, collecting: { current: false }, collectingBatch,
     setBatch: (batch: { completed: number; total: number } | null) => batches.push(batch ? { ...batch } : null),
@@ -197,7 +199,8 @@ test("collect-all does not request the next signature after its wallet boundary 
   let calls = 0;
   let staleUpdates = 0;
   const collectAll = handler("./MeDashboard.tsx", "collectAll", {
-    me: { launches: [{ token: "one" }, { token: "two" }] }, pending: { one: 1n, two: 1n },
+    me: { launches: [{ token: "one" }, { token: "two" }] },
+    pending: { one: { quote: 0n, token: 1n }, two: { quote: 1n, token: 0n } }, hasFees,
     key: (launch: { token: string }) => launch.token, mounted, collecting: { current: false }, collectingBatch,
     setBatch: () => { if (!mounted.current) staleUpdates++; },
     collect: async () => { calls++; mounted.current = false; return true; },

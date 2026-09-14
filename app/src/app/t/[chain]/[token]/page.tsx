@@ -139,7 +139,7 @@ export default async function TokenPage({ params }: { params: Promise<{ chain: s
           <aside className="min-w-0 space-y-6 lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1">
             <TradePanel chain={chain} token={l.token as Address} symbol={l.symbol} poolKey={poolKey} quote={quote} ethUsd={usd} />
             <LaunchReceipt chain={chain} symbol={l.symbol} supply={supplyLabel} txHash={l.tx_hash} />
-            <CollectPanel chain={chain} quote={quote} tokenId={l.token_id} symbol={l.symbol} lpFee={l.lp_fee} recipients={l.recipients} collectedQuote={l.fees_quote_collected} burnedQuote={l.fees_quote_burned} burnedToken={l.fees_token_burned} ethUsd={usd} />
+            <CollectPanel chain={chain} quote={quote} token={l.token as Address} tokenId={l.token_id} symbol={l.symbol} lpFee={l.lp_fee} recipients={l.recipients} collectedQuote={l.fees_quote_collected} collectedToken={l.fees_token_collected} burnedQuote={l.fees_quote_burned} burnedToken={l.fees_token_burned} priceQuote={l.price_quote} ethUsd={usd} />
           </aside>
 
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">

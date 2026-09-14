@@ -176,6 +176,20 @@ export function fmtQuoteUnits(v: number, decimals: number): string {
   return Math.round(Math.abs(v)) >= 100_000 ? COMPACT.format(v) : fmtEth(v);
 }
 
+/**
+ * The exact amount behind a compact figure, for a title: integer part with thousands separators, the fraction
+ * trimmed of trailing zeros, no float anywhere (a raw 18-dec string keeps every digit). "0" for zero.
+ */
+export function fmtUnitsExact(raw: bigint | string, decimals: number): string {
+  const v = BigInt(raw);
+  const neg = v < 0n;
+  const abs = neg ? -v : v;
+  const base = 10n ** BigInt(decimals);
+  const whole = (abs / base).toLocaleString("en-US");
+  const frac = (abs % base).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return `${neg ? "-" : ""}${whole}${frac ? `.${frac}` : ""}`;
+}
+
 /** "12.5 USDG" / "0.05 ETH" / "1.2M GITLAWB" from a raw amount. */
 export function fmtQuote(raw: bigint | string, decimals: number, symbol: string): string {
   return `${fmtQuoteUnits(units(raw, decimals), decimals)} ${symbol}`;

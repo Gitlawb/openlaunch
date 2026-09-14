@@ -15,8 +15,8 @@ import { toast } from "./TxToasts";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/vendor/tabs";
 import { LAUNCH_LOCKER_ABI, ERC20_MIN_ABI } from "@/lib/launchpad/abi";
 import { launchpad } from "@/lib/launchpad/config";
-import { earnedRaw, feeShareBps, holdingUsd, isBurnOnly } from "@/lib/launchpad/creator";
-import { fmtCompact, fmtQuote, fmtUsd } from "@/lib/launchpad/math";
+import { earnedSides, feeShareBps, feeSidesUsd, hasFees, holdingUsd, isBurnOnly, type FeeSides } from "@/lib/launchpad/creator";
+import { fmtCompact, fmtQuote, fmtTokens, fmtUsd } from "@/lib/launchpad/math";
 import { capDisplay } from "@/lib/launchpad/market-cap";
 import type { LaunchRow, WalletTrade } from "@/lib/launchpad/queries";
 import type { EditFields } from "@/lib/launchpad/editAuth";
@@ -29,7 +29,7 @@ import WalletAvatar from "@/components/WalletAvatar";
 import styles from "./MeDashboard.module.css";
 
 type Me = { wallet: string; ethUsd: number | null; launches: LaunchRow[]; tokens: (LaunchRow & { my_buys: number; my_sells: number; my_last_trade: string })[]; trades: WalletTrade[] };
-type Pending = Record<string, bigint | null>; // key chain:token → uncollected quote (raw), null = unknown
+type Pending = Record<string, FeeSides | null>; // key chain:token → uncollected fees on both sides (raw), null = unknown
 type Balances = Record<string, bigint | null>;
 type CollectStage = "checking" | "signing" | "confirming" | "syncing" | "confirmed" | "failed";
 type Collection = { symbol: string; stage: CollectStage; message?: string };
@@ -117,13 +117,13 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
         me.launches.map(async (l) => {
           const cfg = launchpad(l.chain);
           if (!cfg.locker || l.lp_fee === 0) {
-            p[key(l)] = 0n;
+            p[key(l)] = { quote: 0n, token: 0n };
             return;
           }
           try {
             const pub = getPublicClient(config, { chainId: CHAINS[l.chain].id })!;
             const { result } = await pub.simulateContract({ address: cfg.locker, abi: LAUNCH_LOCKER_ABI, functionName: "collect", args: [BigInt(l.token_id)], account: address });
-            p[key(l)] = result[0];
+            p[key(l)] = { quote: result[0], token: result[1] };
           } catch {
             p[key(l)] = null;
           }
@@ -193,7 +193,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
 
   async function collectAll() {
     if (!me || collecting.current || collectingBatch.current) return;
-    const targets = me.launches.filter((l) => (pending[key(l)] ?? 0n) > 0n);
+    const targets = me.launches.filter((l) => hasFees(pending[key(l)]));
     if (!targets.length) return;
     collectingBatch.current = true;
     setBatch({ completed: 0, total: targets.length });
@@ -238,8 +238,8 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
     );
   }
 
-  const collectable = me ? me.launches.filter((l) => (pending[key(l)] ?? 0n) > 0n) : [];
-  const earnedUsd = me ? me.launches.reduce((a, l) => a + (l.quote_usd === null ? 0 : (Number(earnedRaw(l.fees_quote_collected, l.fees_quote_burned, feeShareBps(l.recipients, address))) / 10 ** l.quote_decimals) * l.quote_usd), 0) : 0;
+  const collectable = me ? me.launches.filter((l) => hasFees(pending[key(l)])) : [];
+  const earnedUsd = me ? me.launches.reduce((a, l) => a + (feeSidesUsd(earnedSides(l, feeShareBps(l.recipients, address)), l.quote_decimals, l.price_quote, l.quote_usd) ?? 0), 0) : 0;
   const holdingsUsd = me ? me.tokens.reduce((a, t) => a + (holdingUsd(balances[key(t)] ?? 0n, t.price_quote, t.quote_usd) ?? 0), 0) : 0;
   const holdingsReading = me?.tokens.some((t) => balances[key(t)] === undefined) ?? false;
   const holdingsUnknown = me?.tokens.some((t) => balances[key(t)] === null || (balances[key(t)] !== undefined && holdingUsd(balances[key(t)]!, t.price_quote, t.quote_usd) === null)) ?? false;
@@ -296,7 +296,8 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
         <ul className={styles.tokenList}>
           {me?.launches.map((l) => {
             const share = feeShareBps(l.recipients, address);
-            const earned = earnedRaw(l.fees_quote_collected, l.fees_quote_burned, share);
+            const earned = earnedSides(l, share);
+            const earnedUsdRow = feeSidesUsd(earned, l.quote_decimals, l.price_quote, l.quote_usd);
             const p = pending[key(l)];
             const k = key(l);
             return (
@@ -319,15 +320,17 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
                     </div>
                   </Link>
                   <div className={styles.figure}>
-                    <div className="text-up font-bold">{l.quote_usd !== null ? fmtUsd((Number(earned) / 10 ** l.quote_decimals) * l.quote_usd) : fmtQuote(earned, l.quote_decimals, l.quote_symbol)}</div>
+                    <div className="text-up font-bold" title={`${fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)} + ${fmtTokens(earned.token)} ${l.symbol}`}>{earnedUsdRow !== null ? `${earned.token > 0n ? "≈ " : ""}${fmtUsd(earnedUsdRow)}` : fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)}</div>
+                    {earnedUsdRow === null && earned.token > 0n ? <div className="text-up font-bold">{fmtTokens(earned.token)} {l.symbol}</div> : null}
                     <div className="text-[11px] text-muted">earned · {share / 100}% share</div>
                   </div>
                   <div className={styles.figure}>
-                    <div className={p && p > 0n ? "text-warm-ink font-bold" : "text-muted"}>{p === undefined ? "…" : p === null ? "—" : fmtQuote(p, l.quote_decimals, l.quote_symbol)}</div>
+                    <div className={hasFees(p) ? "text-warm-ink font-bold" : "text-muted"}>{p === undefined ? "…" : p === null ? "—" : fmtQuote(p.quote, l.quote_decimals, l.quote_symbol)}</div>
+                    {p && p.token > 0n ? <div className="text-warm-ink font-bold">{fmtTokens(p.token)} {l.symbol}</div> : null}
                     <div className="text-[11px] text-muted">uncollected</div>
                   </div>
                   <div className={styles.rowActions}>
-                    <button type="button" onClick={() => { if (!collectingBatch.current) void collect(l); }} disabled={busy !== null || batch !== null || !p || p === 0n} className={styles.outlineButton} aria-label={`Collect fees for ${l.symbol}`}>
+                    <button type="button" onClick={() => { if (!collectingBatch.current) void collect(l); }} disabled={busy !== null || batch !== null || !hasFees(p)} className={styles.outlineButton} aria-label={`Collect fees for ${l.symbol}`}>
                       {busy === k && collection ? COLLECT_LABELS[collection.stage] : "Collect"}
                     </button>
                     <button type="button" onClick={() => setEditing(l)} className={styles.quietButton} aria-label={`Edit ${l.symbol} details`}>

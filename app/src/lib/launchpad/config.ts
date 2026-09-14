@@ -13,6 +13,8 @@ export const DEFAULT_SUPPLY = 1_000_000_000n * 10n ** 18n;
 export const DEAD = "0x000000000000000000000000000000000000dEaD" as const;
 export const NATIVE = "0x0000000000000000000000000000000000000000" as const;
 export const BPS = 10_000;
+/** Locker limit on beneficiaries per launch (LaunchLocker.MAX_RECIPIENTS); recipients.test.ts keeps the two in sync. */
+export const MAX_RECIPIENTS = 7;
 
 export type Quote = { key: "eth" | "usdg" | "gitlawb" | "stock"; address: Address; symbol: string; decimals: number; usd: number | null /* fixed USD price (stables); live for stocks + GITLAWB (server-filled) */; name?: string; logo?: string | null };
 export type V4 = { poolManager: Address; positionManager: Address; stateView: Address; quoter: Address; universalRouter: Address; permit2: Address; swapLayout: "v1" | "v2" };

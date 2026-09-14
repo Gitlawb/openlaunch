@@ -4,15 +4,16 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useRouter } from "next/navigation";
 import { useAccount, useBalance, useConfig, useReadContract, useSwitchChain } from "wagmi";
 import { getPublicClient, getWalletClient } from "wagmi/actions";
-import { isAddress, maxUint160, maxUint256, parseEventLogs, parseUnits, zeroAddress, type Address, type Hex, type PublicClient, type WalletClient } from "viem";
+import { maxUint160, maxUint256, parseEventLogs, parseUnits, zeroAddress, type Address, type Hex, type PublicClient, type WalletClient } from "viem";
 import TokenAvatar from "./TokenAvatar";
 import ImageUpload from "./ImageUpload";
-import FeeChip from "./FeeChip";
+import FeeChip, { feeModeOf } from "./FeeChip";
 import GitlawbBadge from "./GitlawbBadge";
 import { toast } from "./TxToasts";
 import { btn, helper, input, label } from "@/components/ui";
 import { ERC20_MIN_ABI, ERC20_TRANSFER_EVENT, LAUNCH_FACTORY_ABI, PERMIT2_ABI, UNIVERSAL_ROUTER_ABI, V4_QUOTER_ABI } from "@/lib/launchpad/abi";
-import { BPS, DEFAULT_SUPPLY, FEE_PRESETS, TICK_SPACING, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
+import { DEAD, DEFAULT_SUPPLY, FEE_PRESETS, MAX_RECIPIENTS, TICK_SPACING, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
+import { bpsToPct, buildRecipients, describeShares, emptyRow, isBurnAddress, type Recipient, type RecipientRow } from "@/lib/launchpad/recipients";
 import { capChipLabel, capDisplay, capEntry, capPick, capPresets, capToQuote } from "@/lib/launchpad/market-cap";
 import { fdvForStartTick, fmtCompact, fmtQuoteUnits, fmtUsd, initialBuyPreview, minOut, startTickForFdv, tickToTokensPerQuote, units } from "@/lib/launchpad/math";
 import { BUY_PRESETS, defaultFirstBuy, suggestFirstBuy } from "@/lib/launchpad/first-buy";
@@ -43,6 +44,7 @@ type Phase =
   | { k: "done"; hash: Hex; token: string }
   | { k: "error"; message: string };
 
+// burn: no beneficiary (the factory registers [DEAD: 100%]). me: the connected wallet, 100%. custom: the split editor (lib/launchpad/recipients.ts).
 type Beneficiary = "burn" | "me" | "custom";
 
 const FIRST_BUY_SLIPPAGE_BPS = 300; // Other buyers can trade between the launch and this separate buy.
@@ -185,7 +187,8 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const [customMcap, setCustomMcap] = useState("");
   const [feePips, setFeePips] = useState<number>(0);
   const [beneficiary, setBeneficiary] = useState<Beneficiary>("burn");
-  const [customAddr, setCustomAddr] = useState("");
+  // Split editor rows, kept while the creator toggles cards so nothing typed is lost; only read in "custom" mode.
+  const [rows, setRows] = useState<RecipientRow[]>([emptyRow()]);
   // First buy: what the creator typed, or the suggestion (lib/launchpad/first-buy.ts) unless they cleared it.
   // A typed amount is bound to the quote it was typed for: switching chain or quote must not carry "25" USDG over as 25 ETH.
   const [typedBuyFor, setTypedBuyFor] = useState<{ amount: string; quoteId: string } | null>(null);
@@ -244,7 +247,8 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   if (quoteKey === "gitlawb" && quote.usd === null && !customMcap.trim() && startTick === null) errors.push("GITLAWB price unavailable right now: enter a custom starting market cap in GITLAWB, or reload.");
   if (image && !/^https:\/\//.test(image.trim())) errors.push("Image must be an https URL.");
   if (website && !/^https:\/\//.test(website.trim())) errors.push("Website must be an https URL.");
-  if (feePips > 0 && beneficiary === "custom" && !isAddress(customAddr.trim())) errors.push("Beneficiary: enter a valid address.");
+  const split = useMemo(() => buildRecipients(rows), [rows]);
+  if (feePips > 0 && beneficiary === "custom") errors.push(...split.errors);
   if (initialBuyRaw === undefined) errors.push(`First buy: enter an amount in ${quote.symbol}, or leave it empty.`);
 
   // the launch is irreversible and the buy comes after it: never let a launch through while the buy's funding is unknown
@@ -259,11 +263,25 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const buyUsd = initialBuyRaw && quoteUsd ? units(initialBuyRaw, quote.decimals) * quoteUsd : null;
   const fmtPct = (p: number) => (p >= 10 ? p.toFixed(0) : p >= 1 ? p.toFixed(1) : p.toFixed(2)) + "%";
 
-  const recipients = useMemo(() => {
-    if (feePips === 0 || beneficiary === "burn") return [] as { payout: Address; bps: number }[];
-    const payout = (beneficiary === "me" ? address : (customAddr.trim() as Address)) as Address | undefined;
-    return payout ? [{ payout, bps: BPS }] : [];
-  }, [feePips, beneficiary, address, customAddr]);
+  const recipients = useMemo<Recipient[]>(() => {
+    if (feePips === 0 || beneficiary === "burn") return [];
+    if (beneficiary === "me") return address ? [{ payout: address, bps: 10_000 }] : [];
+    return split.recipients;
+  }, [feePips, beneficiary, address, split]);
+  // An unfinished split (or "Me" before a wallet connects) has no recipients yet; that must preview as the routing being set up,
+  // never as a burn. Launching stays blocked by the validation errors until the list is complete.
+  const feeMode = feePips > 0 && beneficiary !== "burn" && recipients.length === 0 ? (beneficiary === "custom" && rows.length > 1 ? "split" : "creator") : feeModeOf(feePips, recipients);
+  const feeRouteSub = feeMode === "free" ? "free pool" : feeMode === "burn" ? "burned" : feeMode === "split" ? `split ${recipients.length || rows.length} ways` : "to beneficiary";
+  const setRow = (i: number, patch: Partial<RecipientRow>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = (payout = "") => setRows((rs) => (rs.length >= MAX_RECIPIENTS ? rs : [...rs, { payout, pct: rs.length === 0 ? "100" : "" }]));
+  const removeRow = (i: number) => setRows((rs) => (rs.length <= 1 ? [emptyRow()] : rs.filter((_, j) => j !== i)));
+  // Prefer filling an empty address row over appending, so "Add me" on a fresh editor gives one row, not two.
+  const quickAdd = (payout: string) => {
+    const empty = rows.findIndex((r) => r.payout.trim() === "");
+    if (empty >= 0) setRow(empty, { payout, pct: rows[empty].pct || (rows.length === 1 ? "100" : "") });
+    else addRow(payout);
+  };
+  const hasRow = (payout: string) => rows.some((r) => r.payout.trim().toLowerCase() === payout.toLowerCase());
 
   async function launch() {
     if (!valid || !address || !cfg.factory || startTick === null) return;
@@ -663,7 +681,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                   [
                     { k: "burn", t: "Burn it", d: "No beneficiary. Every fee is sent to 0x…dEaD at collect time." },
                     { k: "me", t: "Me", d: address ? shortAddr(address) : "The connected wallet." },
-                    { k: "custom", t: "Someone else", d: "Any address: a friend, a charity, a DAO." },
+                    { k: "custom", t: "Someone else, or a split", d: `Any addresses, up to ${MAX_RECIPIENTS}: a friend, a charity, a DAO, a partial burn.` },
                   ] as { k: Beneficiary; t: string; d: string }[]
                 ).map((o) => {
                   const active = beneficiary === o.k;
@@ -682,7 +700,47 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 })}
               </div>
               {beneficiary === "custom" ? (
-                <input className={`${input} font-mono`} value={customAddr} onChange={(e) => setCustomAddr(e.target.value.trim())} placeholder="0x…" aria-label="beneficiary address" />
+                <div className="space-y-2">
+                  {rows.map((r, i) => {
+                    const burn = isBurnAddress(r.payout);
+                    return (
+                      <div key={i} className="flex flex-col sm:flex-row gap-2">
+                        <div className="relative min-w-0 flex-1">
+                          <input className={`${input} font-mono ${burn ? "pr-20" : ""}`} value={r.payout} onChange={(e) => setRow(i, { payout: e.target.value.trim() })} placeholder="0x…" aria-label={`beneficiary ${i + 1} address`} autoComplete="off" spellCheck={false} />
+                          {burn ? <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-warm/30 bg-warm-soft px-2 h-6 inline-flex items-center text-[11px] font-medium text-warm-ink pointer-events-none">burned</span> : null}
+                        </div>
+                        <div className="flex gap-2">
+                          <div className="relative w-28 shrink-0">
+                            <input className={`${input} font-mono tnum pr-8`} value={r.pct} onChange={(e) => setRow(i, { pct: e.target.value.trim() })} placeholder="0" inputMode="decimal" aria-label={`beneficiary ${i + 1} share, percent`} />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted pointer-events-none" aria-hidden>%</span>
+                          </div>
+                          <button type="button" className={`${btn.icon} h-12 w-12 shrink-0`} onClick={() => removeRow(i)} aria-label={`remove beneficiary ${i + 1}`} disabled={rows.length === 1 && !r.payout && !r.pct}>
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" className={btn.secondarySm} onClick={() => addRow()} disabled={rows.length >= MAX_RECIPIENTS}>
+                      + Add address
+                    </button>
+                    {address && !hasRow(address) ? (
+                      <button type="button" className={btn.secondarySm} onClick={() => quickAdd(address)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
+                        + Me ({shortAddr(address)})
+                      </button>
+                    ) : null}
+                    {!hasRow(DEAD) ? (
+                      <button type="button" className={btn.secondarySm} onClick={() => quickAdd(DEAD)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
+                        + Burn a share
+                      </button>
+                    ) : null}
+                    <span className={`ml-auto text-xs tnum ${split.remainingBps === 0 ? "text-up" : "text-warm-ink"}`}>
+                      {split.remainingBps === 0 ? "Shares add up to 100%" : split.remainingBps > 0 ? `${bpsToPct(split.remainingBps)}% left to assign` : `${bpsToPct(-split.remainingBps)}% over`}
+                    </span>
+                  </div>
+                  <p className={helper}>Shares in percent, up to two decimals, must total exactly 100%. A row with 0x…dEaD burns that share.</p>
+                </div>
               ) : null}
               <p className={helper}>Fixed forever at launch. Not even you can change it later. That&apos;s the point.</p>
             </div>
@@ -795,14 +853,14 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               {quote.key === "gitlawb" ? <GitlawbBadge size="md" /> : null}
-              <FeeChip lpFee={feePips} mode={feePips === 0 ? "free" : beneficiary === "burn" ? "burn" : "creator"} />
+              <FeeChip lpFee={feePips} mode={feeMode} />
             </div>
           </div>
           {description.trim() ? <p className="mt-3 text-sm text-body line-clamp-3">{description.trim()}</p> : null}
           <dl className="mt-5 grid grid-cols-2 gap-x-5 border-b border-line">
             <Mini k="Opens at" v={fdvPreview !== null ? cap(fdvPreview).main : "—"} sub={fdvPreview !== null ? cap(fdvPreview).detail : CHAIN_LABELS[chain]} />
             <Mini k="First buy" v={initialBuyRaw ? `${initialBuy.trim()} ${quote.symbol}` : "none"} sub={buyPreview ? `${buySource === "suggested" ? "suggested · " : ""}~${fmtPct(buyPreview.pctOfSupply)} of supply` : "pool opens untouched"} />
-            <Mini k="Trading fee" v={FEE_PRESETS.find((f) => f.pips === feePips)?.label ?? "—"} sub={feePips === 0 ? "free pool" : beneficiary === "burn" ? "burned" : "to beneficiary"} />
+            <Mini k="Trading fee" v={FEE_PRESETS.find((f) => f.pips === feePips)?.label ?? "—"} sub={feeRouteSub} />
             <Mini k="Platform fee" v="0" sub="always" accent />
           </dl>
         </div>
@@ -811,7 +869,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             ["Deploys a plain ERC-20", "no mint, no pause, no blacklist, no tax"],
             ["Opens a Uniswap v4 pool", `${quote.symbol} / your token on ${CHAIN_LABELS[chain]}, no hook`],
             ["Locks 100% of supply as liquidity", "the position NFT lives in an ownerless locker, forever"],
-            ["Routes trading fees", feePips === 0 ? "nothing to route at 0%" : beneficiary === "burn" ? "burned at collect time" : "100% to the beneficiary, claimable any time"],
+            ["Routes trading fees", feePips === 0 ? "nothing to route at 0%" : feeMode === "burn" ? "burned at collect time" : recipients.length === 0 ? "to the beneficiaries you name, claimable any time" : `${describeShares(recipients, shortAddr)}, claimable any time`],
             ...(initialBuyRaw ? [["Buys your first tokens", `${initialBuy.trim()} ${quote.symbol} right after the launch confirms, with a second wallet prompt`]] : []),
           ].map(([t, d]) => (
             <li key={t} className="flex gap-2.5">

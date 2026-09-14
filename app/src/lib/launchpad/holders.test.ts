@@ -59,6 +59,7 @@ test("sniper window and summary", () => {
     { trader: B, is_buy: true, block_number: 103, token_amount: -(SUPPLY / 100n) },
     { trader: B, is_buy: true, block_number: 200, token_amount: -(SUPPLY / 2n) }, // too late
     { trader: A, is_buy: false, block_number: 102, token_amount: SUPPLY / 10n }, // sells don't count
+    { trader: null, is_buy: true, block_number: 100, token_amount: -(SUPPLY / 5n) }, // sender unknown: no wallet to attribute
   ];
   const s = sniperSummary(swaps, 100, SUPPLY);
   assert.deepEqual(s.wallets.sort(), [A, B].sort());
@@ -71,6 +72,7 @@ test("creatorActivity counts only the launcher's swaps", () => {
     { trader: DEV, is_buy: false, block_number: 2, token_amount: 400n },
     { trader: DEV.toUpperCase().replace("0X", "0x"), is_buy: false, block_number: 3, token_amount: 100n },
     { trader: A, is_buy: false, block_number: 3, token_amount: 999n },
+    { trader: null, is_buy: false, block_number: 4, token_amount: 50n }, // sender unknown is never the creator
   ];
   assert.deepEqual(creatorActivity(swaps, DEV), { bought: 1000n, sold: 500n, sells: 2 });
 });

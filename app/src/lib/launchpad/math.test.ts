@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fdvForStartTick, fmtCompact, fmtEth, fmtQuoteUnits, fmtPrice, fmtUsd, initialBuyPreview, minOut, poolIdOf, quoteUsdOf, startTickForFdv, sqrtPriceToTokensPerQuote, tickToTokensPerQuote } from "./math.ts";
+import { fdvForStartTick, fmtCompact, fmtEth, fmtQuoteUnits, fmtPrice, fmtUnitsExact, fmtUsd, initialBuyPreview, minOut, poolIdOf, quoteUsdOf, startTickForFdv, sqrtPriceToTokensPerQuote, tickToTokensPerQuote } from "./math.ts";
 import { encodeV4ExactInSingle } from "./swap.ts";
 
 test("startTickForFdv: 10 ETH FDV on 1B supply ≈ tick 184200 (1 ETH = 100M tokens)", () => {
@@ -135,4 +135,14 @@ test("fmtQuoteUnits: stables 2dp, 18-dec ETH-style below 100K, compact above wit
   assert.equal(fmtQuoteUnits(999_999, 18), "1M", "no 1000.00K");
   assert.equal(fmtQuoteUnits(1_234_567, 18), "1.23M");
   assert.equal(fmtQuoteUnits(594_540_000, 18), "594.54M");
+});
+
+test("fmtUnitsExact keeps every digit of a raw amount: no float, no rounding, trailing zeros trimmed", () => {
+  assert.equal(fmtUnitsExact("0", 18), "0");
+  assert.equal(fmtUnitsExact("1", 18), "0.000000000000000001");
+  assert.equal(fmtUnitsExact("1234000000000000000", 18), "1.234");
+  assert.equal(fmtUnitsExact("78455865389296770000000000", 18), "78,455,865.38929677");
+  assert.equal(fmtUnitsExact("123456789012345678901234567890", 18), "123,456,789,012.34567890123456789");
+  assert.equal(fmtUnitsExact(-1500000n, 6), "-1.5");
+  assert.equal(fmtUnitsExact("2500000", 6), "2.5");
 });

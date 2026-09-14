@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { earnedRaw, feeShareBps, holdingUsd, isBurnOnly } from "./creator.ts";
+import { earnedRaw, earnedSides, feeShareBps, feeSidesUsd, hasFees, holdingUsd, isBurnOnly } from "./creator.ts";
 import { buildEditMessage, isNonce, validateEdit } from "./editAuth.ts";
 import { ageLabel, clampSocial, feeLabel, shapeCard } from "./ogcard.ts";
 
@@ -18,6 +18,29 @@ test("earnedRaw = (collected − burned) × share, never negative", () => {
   assert.equal(earnedRaw(1000n, 1000n, 5000), 0n);
   assert.equal(earnedRaw(1000n, 0n, 0), 0n);
   assert.equal(earnedRaw(10n ** 18n, 0n, 10000), 10n ** 18n);
+});
+
+test("earnedSides applies the share to the quote side and the launched token side", () => {
+  const l = { fees_quote_collected: "1000", fees_quote_burned: "200", fees_token_collected: (10n ** 21n).toString(), fees_token_burned: "0" };
+  assert.deepEqual(earnedSides(l, 5000), { quote: 400n, token: 5n * 10n ** 20n });
+  assert.deepEqual(earnedSides(l, 0), { quote: 0n, token: 0n });
+  // a sells-only launch has fees only on the token side
+  assert.deepEqual(earnedSides({ ...l, fees_quote_collected: "0", fees_quote_burned: "0" }, 10000), { quote: 0n, token: 10n ** 21n });
+});
+
+test("feeSidesUsd prices the token side at the pool price; null without a quote price", () => {
+  // 1242 USDG (6 decimals) + 1000 tokens at 0.01 USDG each, USDG = $1
+  assert.equal(feeSidesUsd({ quote: 1_242_000_000n, token: 1000n * 10n ** 18n }, 6, 0.01, 1), 1252);
+  assert.equal(feeSidesUsd({ quote: 0n, token: 2n * 10n ** 18n }, 18, 0.5, 2000), 2000);
+  assert.equal(feeSidesUsd({ quote: 1n, token: 1n }, 6, 1, null), null);
+});
+
+test("hasFees is true when either side is non-zero", () => {
+  assert.equal(hasFees({ quote: 0n, token: 1n }), true);
+  assert.equal(hasFees({ quote: 1n, token: 0n }), true);
+  assert.equal(hasFees({ quote: 0n, token: 0n }), false);
+  assert.equal(hasFees(null), false);
+  assert.equal(hasFees(undefined), false);
 });
 
 test("isBurnOnly / holdingUsd", () => {
@@ -64,6 +87,7 @@ test("share card shaping", () => {
   assert.deepEqual(shapeCard({ name: "Lawb Fan", symbol: "LAWB", chain: "base", fdv_usd: 9800, fdv_quote: 580_000_000, quote_key: "gitlawb", quote_symbol: "GITLAWB", change_from_launch: 0, lp_fee: 10000, recipients: [], block_time: "2026-09-06T09:30:00Z" }, now).quote, { symbol: "GITLAWB", ticker: "GL", kind: "gitlawb" }, "GITLAWB quotes get the Gitlawb mark");
   assert.equal(feeLabel(0, []), "0% fee");
   assert.equal(feeLabel(30000, [{ payout: "0x1", bps: 10000 }]), "3% fee → beneficiary");
+  assert.equal(feeLabel(10000, [{ payout: "0x1", bps: 6000 }, { payout: "0x2", bps: 4000 }]), "1% fee → beneficiaries");
   assert.equal(ageLabel("2026-09-06T11:59:30Z", now), "1m old");
   assert.equal(shapeCard({ name: "X", symbol: "X", chain: "base", fdv_usd: null, fdv_quote: 2.5, quote_key: "eth", quote_symbol: "ETH", change_from_launch: -0.5, lp_fee: 0, recipients: [], block_time: "2026-09-01T00:00:00Z" }, now).mcap, "2.50 ETH");
 });

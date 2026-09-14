@@ -4,10 +4,11 @@ import { isChainKey } from "@/lib/chainPublic";
 import { rateLimited } from "@/lib/launchpad/editServer";
 import { createPost, listFeed, listTokenPosts } from "@/lib/launchpad/postsServer";
 import { memo } from "@/lib/launchpad/memo";
+import { parseTokenPostsPaging, postsCursorKey } from "@/lib/launchpad/posts-paging";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/posts?chain=&token=  → posts on one token (+ muted flag);  GET /api/posts?feed=1&offset= → global human feed. */
+/** GET /api/posts?chain=&token=[&limit=&before=] → one page of posts on a token (+ muted flag, nextCursor);  GET /api/posts?feed=1&offset= → global human feed. */
 export async function GET(req: Request) {
   const u = new URL(req.url);
   if (u.searchParams.get("feed")) {
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
   const chain = u.searchParams.get("chain");
   const token = (u.searchParams.get("token") ?? "").toLowerCase();
   if (!isChainKey(chain) || !isAddress(token)) return NextResponse.json({ error: "bad params" }, { status: 400 });
-  return NextResponse.json(await memo(`posts:${chain}:${token}`, 2_000, () => listTokenPosts(chain, token)), { headers: { "cache-control": "no-store" } });
+  const { limit, beforeId } = parseTokenPostsPaging({ limit: u.searchParams.get("limit"), before: u.searchParams.get("before") });
+  return NextResponse.json(await memo(postsCursorKey(chain, token, limit, beforeId), 2_000, () => listTokenPosts(chain, token, limit, beforeId)), { headers: { "cache-control": "no-store" } });
 }
 
 /** POST {chain, token, wallet, parentId?, body, nonce, ts, signature} → new post. */
