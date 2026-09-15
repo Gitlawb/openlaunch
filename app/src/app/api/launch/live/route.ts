@@ -20,8 +20,9 @@ export async function GET(req: Request) {
   const f = u.searchParams.get("filter");
   const filter = isFilter(f) ? f : null;
   const limit = clampLimit(u.searchParams.get("limit"), 40);
-  const usd = await ethUsd();
-  const listOpts = sort ? { sort, window, chain, filter, limit, offset: 0, ethUsd: usd } : null;
+  try {
+    const usd = await ethUsd();
+    const listOpts = sort ? { sort, window, chain, filter, limit, offset: 0, ethUsd: usd } : null;
   // the home list's first page is the strip's candidate set: rank it instead of running the live query a second time;
   // any other view fetches the strip in the same batch as everything else
   const deriveTrending = listOpts !== null && isTrendingSource(listOpts);
@@ -33,5 +34,9 @@ export async function GET(req: Request) {
     deriveTrending ? Promise.resolve(null) : memo("trending", 2_000, () => getTrending(usd)),
   ]);
   const trending = fetchedTrending ?? trendingFrom(page?.items ?? []);
-  return NextResponse.json({ at: Date.now(), feed, totals, ethUsd: usd, sort, window, chain, filter, limit, has_more: page?.hasMore ?? null, launches: page?.items ?? null, posts, trending }, { headers: { "cache-control": "no-store" } });
+    return NextResponse.json({ at: Date.now(), feed, totals, ethUsd: usd, sort, window, chain, filter, limit, has_more: page?.hasMore ?? null, launches: page?.items ?? null, posts, trending }, { headers: { "cache-control": "no-store" } });
+  } catch (err) {
+    console.error("[launch] live failed:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "could not load live snapshot" }, { status: 502 });
+  }
 }
