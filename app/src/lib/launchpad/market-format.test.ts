@@ -8,6 +8,10 @@ test("ledger money fits its column without rounding dust to zero", () => {
   assert.equal(marketUsd(0.1486467461), "$0.15");
   assert.equal(marketUsd(25_123), "$25.1K");
   assert.equal(marketUsd(Number.NaN), "—");
+  assert.equal(marketUsd(-0.0049), ">-$0.01", "tiny negatives keep their sign instead of formatting as -$0");
+  assert.equal(marketUsd(-0.15), "-$0.15");
+  assert.equal(marketUsd(Infinity), "—");
+  assert.equal(marketUsd(-Infinity), "—");
 });
 
 test("rounded zero changes are neutral; extreme values stay bounded", () => {

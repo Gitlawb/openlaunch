@@ -12,6 +12,7 @@ import { toast } from "./TxToasts";
 import { ERC20_MIN_ABI, PERMIT2_ABI, UNIVERSAL_ROUTER_ABI, V4_QUOTER_ABI } from "@/lib/launchpad/abi";
 import { BUY_PRESETS, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
 import { fmtCompact, fmtQuoteUnits, fmtUsd, minOut, units, pipsToPct } from "@/lib/launchpad/math";
+import { sanitizeDecimalInput } from "@/lib/launchpad/decimal-input";
 import { encodeV4ExactInSingle, type PoolKey } from "@/lib/launchpad/swap";
 import { CHAINS, CHAIN_LABELS, BUILDER_DATA_SUFFIX, explorerTx, type ChainKey } from "@/lib/chainPublic";
 import { tradeQuoteKey } from "@/lib/launchpad/token-market";
@@ -204,7 +205,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
             {balance !== undefined ? <button type="button" disabled={busy} className="max-w-[65%] truncate font-mono text-[10px] hover:text-ink" title="Use maximum available balance (reserve gas for ETH)" onClick={() => setAmount(side === "buy" ? (isNative ? formatEther(balance > parseEther("0.0005") ? balance - parseEther("0.0005") : 0n) : formatUnits(balance, quote.decimals)) : formatEther(balance))}>Bal {side === "buy" ? fmtQ(balance) : fmtCompact(Number(balance) / 1e18)}</button> : <Wallet size={12} aria-hidden />}
           </div>
           <div className="mt-2 flex items-center gap-3">
-            <input id={`amount-${chain}-${token}`} disabled={busy} className="min-w-0 w-full bg-transparent py-1 font-mono text-[30px] leading-tight text-ink outline-offset-4 placeholder:text-faint tnum" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.0" inputMode="decimal" autoComplete="off" aria-label={side === "buy" ? `${quote.symbol} amount` : `${symbol} amount`} />
+            <input id={`amount-${chain}-${token}`} disabled={busy} className="min-w-0 w-full bg-transparent py-1 font-mono text-[30px] leading-tight text-ink outline-offset-4 placeholder:text-faint tnum" value={amount} onChange={(e) => setAmount(sanitizeDecimalInput(e.target.value))} placeholder="0.0" inputMode="decimal" autoComplete="off" aria-label={side === "buy" ? `${quote.symbol} amount` : `${symbol} amount`} />
             <span className="max-w-24 shrink-0 truncate rounded-lg border border-line-strong bg-paper px-2.5 py-1.5 text-xs font-medium text-ink">{side === "buy" ? quote.symbol : symbol}</span>
           </div>
           <div className="mt-3 grid grid-cols-4 gap-1.5">
