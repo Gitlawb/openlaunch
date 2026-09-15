@@ -13,7 +13,7 @@ import Footer from "@/components/Footer";
 import RouteProgress from "@/components/RouteProgress";
 import ThemeProvider from "@/components/ThemeProvider";
 import { Suspense } from "react";
-import { inter, spaceMono, unbounded } from "./fonts";
+import { inter, geistMono, unbounded } from "./fonts";
 
 const TITLE = SITE_TITLE;
 const DESCRIPTION = SITE_DESCRIPTION;
@@ -38,7 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const usd = await ethUsd();
   const [feed, totals] = await Promise.all([getLaunchFeed(24, usd).catch(() => []), getLaunchTotals(usd)]);
   return (
-    <html lang="en" className={`${inter.variable} ${spaceMono.variable} ${unbounded.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${geistMono.variable} ${unbounded.variable}`} suppressHydrationWarning>
       <body id="site-top" tabIndex={-1} className="min-h-screen flex flex-col">
         <ThemeProvider nonce={nonce}>
         <Web3Provider>

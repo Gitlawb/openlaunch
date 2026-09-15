@@ -237,7 +237,7 @@ export async function listLaunchesPage(opts: ListOpts = {}): Promise<ListPage> {
   if (opts.chain) conds.push(db`l.chain_id = ${chainIdOf(opts.chain)}`);
   if (opts.launcher) conds.push(db`l.launcher = ${opts.launcher.toLowerCase()}`);
   if (opts.filter === "fee0") conds.push(db`l.lp_fee = 0`);
-  if (opts.filter === "burn") conds.push(db`l.lp_fee > 0 AND jsonb_array_length(l.recipients) = 1 AND lower(l.recipients->0->>'payout') = ${DEAD_ADDR}`);
+  if (opts.filter === "burn") conds.push(db`l.lp_fee > 0 AND jsonb_array_length(CASE WHEN jsonb_typeof(l.recipients) = 'array' THEN l.recipients ELSE '[]'::jsonb END) = 1 AND lower(l.recipients->0->>'payout') = ${DEAD_ADDR}`);
   if (opts.filter === "usdg") conds.push(db`l.quote = ${USDG_ADDR}`);
   // GITLAWB has a different address per chain; each match is chain-scoped so a same-address token elsewhere is never GITLAWB
   const isGitlawb = () => db`((l.chain_id = ${BASE_ID} AND l.quote = ${GITLAWB_ADDRESS}) OR (l.chain_id = ${RH_ID} AND l.quote = ${GITLAWB_ADDRESS_ROBINHOOD}))`;
@@ -300,6 +300,22 @@ export async function getLaunch(chain: ChainKey, token: string, ethUsd: number |
   await withStocks();
   const rows = await db<Raw[]>`${db.unsafe(SELECT)} WHERE l.chain_id = ${chainIdOf(chain)} AND l.token = ${token.toLowerCase()}`;
   return rows[0] ? shape(rows[0], ethUsd) : null;
+}
+
+/** A bounded watchlist lookup shares the market read model without one query per token. */
+export async function getLaunchesByRefs(refs: readonly { chain: ChainKey; token: string }[], ethUsd: number | null = null): Promise<{ launch: LaunchRow; holders: number | null }[]> {
+  if (refs.length > 50) throw new Error("too many launch references");
+  const db = maybeDb();
+  if (!db || refs.length === 0) return [];
+  await withStocks();
+  const matches = refs.map((ref) => db`(l.chain_id = ${chainIdOf(ref.chain)} AND l.token = ${ref.token.toLowerCase()})`);
+  const rows = await db<(Raw & { holders_synced_block: bigint | null })[]>`
+    ${db.unsafe(SELECT)} WHERE ${matches.reduce((a, b) => db`${a} OR ${b}`)}`;
+  return rows.map((r) => ({
+    launch: shape(r, ethUsd),
+    // Same completed-backfill sentinel as getHolderPanel. An unfinished index is not zero holders.
+    holders: r.holders_synced_block !== null && BigInt(r.holders_synced_block) > BigInt(r.block_number) + 1_000_000n ? Number(r.holders) : null,
+  }));
 }
 
 /** Find which chain a token lives on (for the legacy /t/<token> redirect). */
