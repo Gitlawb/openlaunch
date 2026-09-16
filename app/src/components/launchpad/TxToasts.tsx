@@ -1,146 +1,179 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDownLeft, ArrowUpRight, Check, Coins, Info, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import TokenAvatar from "./TokenAvatar";
-import type { FeedItem } from "@/lib/launchpad/queries";
 import { fmtQuote } from "@/lib/launchpad/math";
-import type { ChainKey } from "@/lib/chainPublic";
 import { CHAIN_SHORT } from "@/lib/chainPublic";
 import { shortAddr } from "@/lib/chainPublic";
+import { createToastFeedTracker, createToastQueue, dismissToast, enqueueToast, expireToast, pauseToast, removeActivityToasts, toastDelay, TOAST_TTL_MS, type ActiveToast, type QueuedToast, type ToastDetail } from "@/lib/launchpad/toast-queue";
+import { getActivityNotifications, subscribeActivityNotifications } from "@/lib/launchpad/activity-preference";
 import { useLive } from "./LiveProvider";
+
+export type { ToastDetail } from "@/lib/launchpad/toast-queue";
 
 /**
  * Global transaction toasts. Reads the shared LiveProvider feed and pops one toast
- * per NEW launch / buy / sell (history seen on first load is not replayed).
+ * per NEW launch / buy / sell unless muted in notification settings (history is never replayed).
  * Local events (your own launch / trade confirming) arrive via
  * `window.dispatchEvent(new CustomEvent("bb:toast", { detail }))` and also fire
- * a confetti burst. Max 4 on screen, 6s each, hover to pause. Reduced-motion safe.
+ * a confetti burst when shown. One card at a time, 6s each; hover/focus pauses.
+ * Local confirmations take priority over the bounded activity backlog.
  */
-export type ToastDetail = { kind: "launch" | "buy" | "sell" | "collect" | "info"; title: string; sub?: string; chain?: ChainKey; token?: string; symbol?: string; image?: string | null; celebrate?: boolean };
-type Toast = ToastDetail & { id: string; at: number; leaving?: boolean };
-
-const TTL_MS = 6_000;
-const MAX = 4;
-
-function keyOf(i: FeedItem): string {
-  return `${i.kind}:${i.tx_hash}:${i.token}${i.kind === "swap" ? `:${i.quote_wei}` : ""}`;
-}
-
 export function toast(detail: ToastDetail) {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<ToastDetail>("bb:toast", { detail }));
 }
 
 export default function TxToasts() {
   const { live, subscribe } = useLive();
-  const [items, setItems] = useState<Toast[]>([]);
-  const seen = useRef<Set<string> | null>(null);
-  const paused = useRef(false);
-  const [burst, setBurst] = useState(0);
+  const [queue, setQueue] = useState(createToastQueue);
+  const [freshFeed] = useState(() => createToastFeedTracker(live.feed ?? [], live.at));
+  const active = queue.active;
 
-  const push = (t: ToastDetail) => {
+  const push = useCallback((t: ToastDetail, source: QueuedToast["source"]) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setItems((cur) => [...cur.slice(-(MAX - 1)), { ...t, id, at: Date.now() }]);
-    if (t.celebrate) setBurst((b) => b + 1);
-  };
+    const now = Date.now();
+    setQueue((cur) => enqueueToast(cur, { ...t, id, source }, now));
+  }, []);
 
   // local events
   useEffect(() => {
-    const h = (e: Event) => push((e as CustomEvent<ToastDetail>).detail);
+    const h = (e: Event) => push((e as CustomEvent<ToastDetail>).detail, "local");
     window.addEventListener("bb:toast", h);
     return () => window.removeEventListener("bb:toast", h);
-  }, []);
+  }, [push]);
 
-  // chain feed (from the shared poller). History present at mount is remembered, not replayed.
+  // Keep both subscriptions stable: enabling after a hidden/offline gap first establishes a fresh baseline.
   useEffect(() => {
-    if (!seen.current) seen.current = new Set((live.feed ?? []).map(keyOf));
-    return subscribe((snap) => {
-      const incoming = snap.feed ?? [];
-      const fresh = incoming.filter((i) => !seen.current!.has(keyOf(i))).reverse(); // oldest first
+    let enabled = getActivityNotifications();
+    let baselineNextFeed = false;
+    const unsubscribePreference = subscribeActivityNotifications(() => {
+      const next = getActivityNotifications();
+      if (next && !enabled) baselineNextFeed = true;
+      enabled = next;
+      // Muting applies immediately to the backlog, without touching local updates.
+      if (!enabled) {
+        const now = Date.now();
+        setQueue((cur) => removeActivityToasts(cur, now));
+      }
+    });
+    const unsubscribeFeed = subscribe((snap) => {
+      // A snapshot after a hidden-tab/offline gap comes back empty: missed activity is history, not news.
+      const fresh = freshFeed(snap.feed ?? [], snap.at);
+      // Observe while muted, including a silent first successful snapshot after re-enabling.
+      if (!getActivityNotifications()) return;
+      if (baselineNextFeed) {
+        baselineNextFeed = false;
+        return;
+      }
       for (const i of fresh) {
-        seen.current!.add(keyOf(i));
         if (i.kind === "launch") {
-          push({ kind: "launch", title: `${i.name} just launched on ${CHAIN_SHORT[i.chain]}`, sub: `${i.symbol} · by ${shortAddr(i.launcher)}${i.lp_fee === 0 ? " · 0% fee" : ""}`, chain: i.chain, token: i.token, symbol: i.symbol, image: i.image_url });
+          push({ kind: "launch", title: `${i.name} just launched on ${CHAIN_SHORT[i.chain]}`, sub: `${i.symbol} · by ${shortAddr(i.launcher)}${i.lp_fee === 0 ? " · 0% fee" : ""}`, chain: i.chain, token: i.token, symbol: i.symbol, image: i.image_url }, "activity");
         } else {
-          push({ kind: i.is_buy ? "buy" : "sell", title: `${i.is_dev ? (i.is_buy ? "Dev buy" : "Dev sold") : i.is_buy ? "Buy" : "Sell"} ${fmtQuote(i.quote_wei, i.quote_decimals, i.quote_symbol)} of ${i.symbol}`, sub: `${i.is_dev ? "creator wallet" : shortAddr(i.trader)} · ${CHAIN_SHORT[i.chain]}`, chain: i.chain, token: i.token, symbol: i.symbol, image: i.image_url });
+          push({ kind: i.is_buy ? "buy" : "sell", title: `${i.is_dev ? (i.is_buy ? "Dev buy" : "Dev sold") : i.is_buy ? "Buy" : "Sell"} ${fmtQuote(i.quote_wei, i.quote_decimals, i.quote_symbol)} of ${i.symbol}`, sub: `${i.is_dev ? "creator wallet" : shortAddr(i.trader)} · ${CHAIN_SHORT[i.chain]}`, chain: i.chain, token: i.token, symbol: i.symbol, image: i.image_url }, "activity");
         }
       }
-      if (seen.current!.size > 2000) seen.current = new Set(incoming.map(keyOf));
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscribe]);
+    return () => {
+      unsubscribePreference();
+      unsubscribeFeed();
+    };
+  }, [subscribe, freshFeed, push]);
 
-  // expiry
+  // Only the active card owns a timer. Pending arrivals never restart it.
   useEffect(() => {
-    if (items.length === 0) return;
-    const t = setInterval(() => {
-      if (paused.current) return;
-      const now = Date.now();
-      setItems((cur) => {
-        let changed = false;
-        const next = cur
-          .map((x) => {
-            if (!x.leaving && now - x.at > TTL_MS) {
-              changed = true;
-              return { ...x, leaving: true };
-            }
-            return x;
-          })
-          .filter((x) => !(x.leaving && now - x.at > TTL_MS + 350));
-        if (next.length !== cur.length) changed = true;
-        return changed ? next : cur;
-      });
-    }, 250);
-    return () => clearInterval(t);
-  }, [items.length]);
+    if (!active) return;
+    const delay = toastDelay(active, Date.now());
+    if (delay === null) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = (wait: number) => {
+      timer = setTimeout(() => {
+        const now = Date.now();
+        const remaining = toastDelay(active, now);
+        if (remaining === null) return;
+        // A timer can fire a moment early against Date.now(): expireToast would change nothing and nothing would re-arm,
+        // leaving this card (and everything queued behind it) on screen until dismissed. Wait out the remainder instead.
+        if (remaining > 0) {
+          schedule(remaining);
+          return;
+        }
+        setQueue((cur) => expireToast(cur, active.id, now));
+      }, wait);
+    };
+    schedule(delay);
+    return () => clearTimeout(timer);
+  }, [active]);
+
+  const pause = (reason: "hover" | "focus", paused: boolean) => {
+    const now = Date.now();
+    setQueue((cur) => pauseToast(cur, reason, paused, now));
+  };
 
   return (
     <>
-      {burst > 0 ? <Confetti key={burst} /> : null}
+      {active?.celebrate ? <Confetti key={active.id} /> : null}
       <div
-        className="fixed z-50 inset-x-3 top-[4.25rem] sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4 flex flex-col gap-2 pointer-events-none"
+        className="bb-toast-region"
         aria-live="polite"
-        onMouseEnter={() => (paused.current = true)}
-        onMouseLeave={() => (paused.current = false)}
+        onMouseEnter={() => pause("hover", true)}
+        onMouseLeave={() => pause("hover", false)}
+        onFocus={() => pause("focus", true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) pause("focus", false);
+        }}
       >
-        {items.map((t) => (
-          <ToastCard key={t.id} t={t} onClose={() => setItems((cur) => cur.filter((x) => x.id !== t.id))} />
-        ))}
+        {active ? <ToastCard key={active.id} t={active} pending={queue.pending.length} onClose={() => {
+          const now = Date.now();
+          setQueue((cur) => dismissToast(cur, active.id, now));
+        }} /> : null}
       </div>
     </>
   );
 }
 
-function ToastCard({ t, onClose }: { t: Toast; onClose: () => void }) {
-  const accent = t.kind === "buy" ? "bg-up" : t.kind === "sell" ? "bg-down" : t.kind === "launch" ? "bg-brand" : "bg-warm";
-  const inner = (
-    <div className={`pointer-events-auto flex items-center gap-3 rounded-2xl bg-card border border-line shadow-dialog pl-3 pr-2 py-2.5 w-full sm:w-80 ${t.leaving ? "bb-toast-out" : "bb-toast-in"}`}>
-      <span className={`h-9 w-1 rounded-full ${accent} shrink-0`} aria-hidden />
-      {t.token && t.symbol ? <TokenAvatar chain={t.chain ?? "unknown"} token={t.token} symbol={t.symbol} image={t.image} size={32} /> : null}
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold text-ink truncate">{t.title}</div>
-        {t.sub ? <div className="text-[11px] text-muted font-mono truncate">{t.sub}</div> : null}
+function ToastCard({ t, pending = 0, onClose }: { t: ActiveToast; pending?: number; onClose: () => void }) {
+  const EventIcon = t.kind === "buy" ? ArrowDownLeft : t.kind === "sell" ? ArrowUpRight : t.kind === "launch" ? Plus : t.kind === "collect" ? Coins : Info;
+  const confirmed = t.source === "local" && t.kind !== "info";
+  const eventLabel = t.kind === "info" ? "Update" : confirmed ? "Confirmed" : "Live activity";
+  const content = (
+    <>
+      <div className="bb-toast-body">
+        <div className="bb-toast-identity" aria-hidden="true">
+          {t.token && t.symbol ? <TokenAvatar chain={t.chain ?? "unknown"} token={t.token} symbol={t.symbol} image={t.image} size={40} /> : <EventIcon size={21} strokeWidth={1.8} />}
+        </div>
+        <div className="min-w-0">
+          <p className="bb-toast-title">{t.title}</p>
+          {t.sub ? <p className="bb-toast-description">{t.sub}</p> : null}
+        </div>
       </div>
+      <div className="bb-toast-meta">
+        <span className="bb-toast-status">{confirmed ? <Check size={13} strokeWidth={2} aria-hidden="true" /> : <EventIcon size={13} strokeWidth={1.8} aria-hidden="true" />}{eventLabel}</span>
+        {t.chain ? <span className="bb-toast-chain">{CHAIN_SHORT[t.chain]}</span> : null}
+        {t.token ? <span className="bb-toast-destination">View token <ArrowUpRight size={13} strokeWidth={1.8} aria-hidden="true" /></span> : null}
+      </div>
+    </>
+  );
+  return (
+    <div className={`bb-toast-card ${t.leaving ? "bb-toast-out" : "bb-toast-in"}`} data-kind={t.kind} style={{ animationPlayState: t.leaving && t.startedAt === null ? "paused" : "running" }}>
+      {t.token ? (
+        <Link href={`/t/${t.chain ?? "base"}/${t.token}`} className="bb-toast-content">
+          {content}
+        </Link>
+      ) : <div className="bb-toast-content">{content}</div>}
       <button
         type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onClose();
-        }}
+        onClick={onClose}
         aria-label="Dismiss"
-        className="h-7 w-7 rounded-lg text-faint hover:text-ink hover:bg-paper grid place-items-center shrink-0"
+        className="bb-toast-dismiss"
       >
-        ×
+        <X size={16} strokeWidth={1.8} aria-hidden="true" />
       </button>
+      {pending > 0 ? <div className="bb-toast-queued" aria-live="off">{pending} queued</div> : null}
+      <div className="bb-toast-timer" aria-hidden="true">
+        <span className="bb-toast-progress" style={{ animationDuration: `${TOAST_TTL_MS}ms`, animationPlayState: t.startedAt === null ? "paused" : "running", opacity: t.leaving ? 0 : 1 }} />
+      </div>
     </div>
-  );
-  return t.token ? (
-    <Link href={`/t/${t.chain ?? "base"}/${t.token}`} className="block">
-      {inner}
-    </Link>
-  ) : (
-    inner
   );
 }
 

@@ -48,11 +48,13 @@ test("parseRoundData decodes latestRoundData words and negative answers", () => 
   assert.equal(parseRoundData("0x1234"), null);
 });
 
-test("feedUsd: 8-dec answer → USD; stale, zero or negative → null", () => {
+test("feedUsd: 8-dec answer → USD; stale, future, zero or negative → null", () => {
   const now = 1_700_100_000;
   assert.equal(feedUsd({ answer: 22996000000n, updatedAt: now - 3600 }, now), 229.96);
   assert.equal(feedUsd({ answer: 22996000000n, updatedAt: now - 2 * 24 * 3600 }, now), 229.96, "weekend hold is fine");
   assert.equal(feedUsd({ answer: 22996000000n, updatedAt: now - BASE_STOCK_MAX_FEED_AGE_S - 1 }, now), null, "too old");
+  assert.equal(feedUsd({ answer: 22996000000n, updatedAt: now + 60 }, now), null, "future round (clock skew / bad RPC) is not a price");
+  assert.equal(feedUsd({ answer: 22996000000n, updatedAt: now + BASE_STOCK_MAX_FEED_AGE_S }, now), null, "far-future round is not a price either");
   assert.equal(feedUsd({ answer: 0n, updatedAt: now }, now), null);
   assert.equal(feedUsd({ answer: -1n, updatedAt: now }, now), null);
   assert.equal(feedUsd(null, now), null);

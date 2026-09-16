@@ -8,6 +8,7 @@ import { maxUint160, maxUint256, parseEventLogs, parseUnits, zeroAddress, type A
 import TokenAvatar from "./TokenAvatar";
 import ImageUpload from "./ImageUpload";
 import FeeChip, { feeModeOf } from "./FeeChip";
+import LaunchFeeSettings, { type FeeBeneficiary } from "./LaunchFeeSettings";
 import GitlawbBadge from "./GitlawbBadge";
 import { toast } from "./TxToasts";
 import { btn, helper, input, label } from "@/components/ui";
@@ -15,6 +16,7 @@ import { ERC20_MIN_ABI, ERC20_TRANSFER_EVENT, LAUNCH_FACTORY_ABI, PERMIT2_ABI, U
 import { DEAD, DEFAULT_SUPPLY, FEE_PRESETS, MAX_RECIPIENTS, TICK_SPACING, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
 import { bpsToPct, buildRecipients, describeShares, emptyRow, isBurnAddress, type Recipient, type RecipientRow } from "@/lib/launchpad/recipients";
 import { capChipLabel, capDisplay, capEntry, capPick, capPresets, capToQuote } from "@/lib/launchpad/market-cap";
+import { uppercaseInPlace } from "@/lib/launchpad/symbol-input";
 import { fdvForStartTick, fmtCompact, fmtQuoteUnits, fmtUsd, initialBuyPreview, minOut, startTickForFdv, tickToTokensPerQuote, units } from "@/lib/launchpad/math";
 import { BUY_PRESETS, defaultFirstBuy, suggestFirstBuy } from "@/lib/launchpad/first-buy";
 import { getFirstBuyDeclined, getFirstBuyDeclinedServer, setFirstBuyDeclined, subscribeFirstBuyDeclined } from "@/lib/launchpad/first-buy-session";
@@ -44,9 +46,8 @@ type Phase =
   | { k: "done"; hash: Hex; token: string }
   | { k: "error"; message: string };
 
-// burn: no beneficiary (the factory registers [DEAD: 100%]). me: the connected wallet, 100%. custom: the split editor (lib/launchpad/recipients.ts).
-type Beneficiary = "burn" | "me" | "custom";
-
+// A chain without contracts reads as upcoming to visitors; in development the reason is what matters.
+const UNCONFIGURED_CHAIN_COPY = process.env.NODE_ENV === "production" ? "Coming soon." : "Not configured here. Contract settings are missing in this environment.";
 const FIRST_BUY_SLIPPAGE_BPS = 300; // Other buyers can trade between the launch and this separate buy.
 const PERMIT_EXPIRY_S = 30 * 24 * 3600;
 // Native ETH kept back from a first buy: the launch transaction is sent first and pays its own gas, then the buy (and, for
@@ -186,7 +187,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const [mcapPick, setMcapPick] = useState<number | null>(null);
   const [customMcap, setCustomMcap] = useState("");
   const [feePips, setFeePips] = useState<number>(0);
-  const [beneficiary, setBeneficiary] = useState<Beneficiary>("burn");
+  const [beneficiary, setBeneficiary] = useState<FeeBeneficiary>("burn");
   // Split editor rows, kept while the creator toggles cards so nothing typed is lost; only read in "custom" mode.
   const [rows, setRows] = useState<RecipientRow[]>([emptyRow()]);
   // First buy: what the creator typed, or the suggestion (lib/launchpad/first-buy.ts) unless they cleared it.
@@ -225,6 +226,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const cap = (v: number) => capDisplay(v, quoteUsd, quote);
 
   const onChain = chainId === CHAIN.id;
+  // Normalize for the preview and launch payload, never the live IME composition.
   const symbolClean = symbol.trim().toUpperCase();
   // Balances, read as soon as a wallet is connected so the suggestion can be decided: the native balance always (it pays
   // the buy's gas, and the approvals an ERC-20 quote needs first), plus the quote token's balance for an ERC-20 quote.
@@ -241,7 +243,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const initialBuyRaw = parseBuyAmount(initialBuy, quote.decimals);
   const errors: string[] = [];
   if (name.trim().length === 0 || name.trim().length > 32) errors.push("Name: 1–32 characters.");
-  if (!/^[A-Z0-9]{1,10}$/.test(symbolClean)) errors.push("Symbol: 1–10 letters or digits.");
+  if (!/^[A-Z0-9]{1,10}$/.test(symbolClean)) errors.push("Symbol: use 1–10 English letters (A–Z) or digits (0–9).");
   if (startTick === null) errors.push("Starting market cap must be a positive number.");
   if (quoteKey === "stock" && !stock) errors.push(STOCK_PICK_MESSAGE);
   if (quoteKey === "gitlawb" && quote.usd === null && !customMcap.trim() && startTick === null) errors.push("GITLAWB price unavailable right now: enter a custom starting market cap in GITLAWB, or reload.");
@@ -428,7 +430,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                   aria-pressed={active}
                 >
                   <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{CHAIN_LABELS[k]}</div>
-                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : ok ? "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents." : "Coming soon."}</div>
+                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{!ok ? UNCONFIGURED_CHAIN_COPY : k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents."}</div>
                 </button>
               );
             })}
@@ -570,7 +572,30 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
               <label className={label} htmlFor="symbol">
                 Symbol
               </label>
-              <input id="symbol" className={`${input} font-mono uppercase`} value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} placeholder="SKY" maxLength={10} autoComplete="off" />
+              <input
+                id="symbol"
+                className={`${input} font-mono`}
+                value={symbol}
+                onChange={(e) => {
+                  // Rewriting an in-progress IME composition breaks the candidate window: keep it verbatim until it ends.
+                  setSymbol((e.nativeEvent as InputEvent).isComposing ? e.target.value : uppercaseInPlace(e.target));
+                }}
+                onCompositionEnd={(e) => setSymbol(uppercaseInPlace(e.currentTarget))}
+                onKeyDown={(e) => {
+                  // Some IMEs end composition before the confirming Enter keydown.
+                  if (e.key === "Enter" && (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)) e.preventDefault();
+                }}
+                placeholder="SKY"
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby="symbol-help"
+                aria-invalid={Boolean(symbol) && !/^[A-Z0-9]{1,10}$/.test(symbolClean)}
+              />
+              <p id="symbol-help" className={`${helper} mt-2`}>
+                1–10 English letters (A–Z) or digits (0–9), published in uppercase. Your token name can use other languages.
+              </p>
             </div>
           </div>
           <div>
@@ -647,107 +672,56 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         </section>
 
         {/* fees */}
-        <section className="space-y-5 py-8">
-          <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <h2 className="text-base font-semibold text-ink">Trading fee</h2>
-            <span className="text-xs text-up font-medium">Platform fee: 0, always</span>
-          </div>
-          <div className="grid sm:grid-cols-3 gap-2">
-            {FEE_PRESETS.map((f) => {
-              const active = feePips === f.pips;
+        <LaunchFeeSettings
+          feePips={feePips}
+          beneficiary={beneficiary}
+          address={address}
+          split={split}
+          onFeeChange={setFeePips}
+          onBeneficiaryChange={setBeneficiary}
+        >
+          <div className="space-y-2">
+            {rows.map((r, i) => {
+              const burn = isBurnAddress(r.payout);
               return (
-                <button
-                  type="button"
-                  key={f.pips}
-                  onClick={() => {
-                    setFeePips(f.pips);
-                    if (f.pips === 0) setBeneficiary("burn");
-                  }}
-                  className={`border-b-2 px-3 py-3 text-left transition-colors ${active ? "border-brand bg-brand-soft" : "border-line hover:border-line-strong hover:bg-card"}`}
-                  aria-pressed={active}
-                >
-                  <div className={`font-mono font-bold text-lg tnum ${active ? "text-brand" : "text-ink"}`}>{f.label}</div>
-                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{f.blurb}</div>
-                </button>
+                <div key={i} className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <input className={`${input} font-mono ${burn ? "pr-20" : ""}`} value={r.payout} onChange={(e) => setRow(i, { payout: e.target.value.trim() })} placeholder="0x…" aria-label={`beneficiary ${i + 1} address`} autoComplete="off" spellCheck={false} />
+                    {burn ? <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-warm/30 bg-warm-soft px-2 h-6 inline-flex items-center text-[11px] font-medium text-warm-ink pointer-events-none">burned</span> : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative w-28 shrink-0">
+                      <input className={`${input} font-mono tnum pr-8`} value={r.pct} onChange={(e) => setRow(i, { pct: e.target.value.trim() })} placeholder="0" inputMode="decimal" aria-label={`beneficiary ${i + 1} share, percent`} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted pointer-events-none" aria-hidden>%</span>
+                    </div>
+                    <button type="button" className={`${btn.icon} h-12 w-12 shrink-0`} onClick={() => removeRow(i)} aria-label={`remove beneficiary ${i + 1}`} disabled={rows.length === 1 && !r.payout && !r.pct}>
+                      ×
+                    </button>
+                  </div>
+                </div>
               );
             })}
-          </div>
-
-          {feePips > 0 ? (
-            <div className="space-y-3 pt-1">
-              <p className={label}>Who receives the fee?</p>
-              <div className="grid sm:grid-cols-3 gap-2">
-                {(
-                  [
-                    { k: "burn", t: "Burn it", d: "No beneficiary. Every fee is sent to 0x…dEaD at collect time." },
-                    { k: "me", t: "Me", d: address ? shortAddr(address) : "The connected wallet." },
-                    { k: "custom", t: "Someone else, or a split", d: `Any addresses, up to ${MAX_RECIPIENTS}: a friend, a charity, a DAO, a partial burn.` },
-                  ] as { k: Beneficiary; t: string; d: string }[]
-                ).map((o) => {
-                  const active = beneficiary === o.k;
-                  return (
-                    <button
-                      type="button"
-                      key={o.k}
-                      onClick={() => setBeneficiary(o.k)}
-                      className={`border-b-2 px-3 py-3 text-left transition-colors ${active ? "border-brand bg-brand-soft" : "border-line hover:border-line-strong hover:bg-card"}`}
-                      aria-pressed={active}
-                    >
-                      <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{o.t}</div>
-                      <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{o.d}</div>
-                    </button>
-                  );
-                })}
-              </div>
-              {beneficiary === "custom" ? (
-                <div className="space-y-2">
-                  {rows.map((r, i) => {
-                    const burn = isBurnAddress(r.payout);
-                    return (
-                      <div key={i} className="flex flex-col sm:flex-row gap-2">
-                        <div className="relative min-w-0 flex-1">
-                          <input className={`${input} font-mono ${burn ? "pr-20" : ""}`} value={r.payout} onChange={(e) => setRow(i, { payout: e.target.value.trim() })} placeholder="0x…" aria-label={`beneficiary ${i + 1} address`} autoComplete="off" spellCheck={false} />
-                          {burn ? <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-warm/30 bg-warm-soft px-2 h-6 inline-flex items-center text-[11px] font-medium text-warm-ink pointer-events-none">burned</span> : null}
-                        </div>
-                        <div className="flex gap-2">
-                          <div className="relative w-28 shrink-0">
-                            <input className={`${input} font-mono tnum pr-8`} value={r.pct} onChange={(e) => setRow(i, { pct: e.target.value.trim() })} placeholder="0" inputMode="decimal" aria-label={`beneficiary ${i + 1} share, percent`} />
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted pointer-events-none" aria-hidden>%</span>
-                          </div>
-                          <button type="button" className={`${btn.icon} h-12 w-12 shrink-0`} onClick={() => removeRow(i)} aria-label={`remove beneficiary ${i + 1}`} disabled={rows.length === 1 && !r.payout && !r.pct}>
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" className={btn.secondarySm} onClick={() => addRow()} disabled={rows.length >= MAX_RECIPIENTS}>
-                      + Add address
-                    </button>
-                    {address && !hasRow(address) ? (
-                      <button type="button" className={btn.secondarySm} onClick={() => quickAdd(address)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
-                        + Me ({shortAddr(address)})
-                      </button>
-                    ) : null}
-                    {!hasRow(DEAD) ? (
-                      <button type="button" className={btn.secondarySm} onClick={() => quickAdd(DEAD)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
-                        + Burn a share
-                      </button>
-                    ) : null}
-                    <span className={`ml-auto text-xs tnum ${split.remainingBps === 0 ? "text-up" : "text-warm-ink"}`}>
-                      {split.remainingBps === 0 ? "Shares add up to 100%" : split.remainingBps > 0 ? `${bpsToPct(split.remainingBps)}% left to assign` : `${bpsToPct(-split.remainingBps)}% over`}
-                    </span>
-                  </div>
-                  <p className={helper}>Shares in percent, up to two decimals, must total exactly 100%. A row with 0x…dEaD burns that share.</p>
-                </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className={btn.secondarySm} onClick={() => addRow()} disabled={rows.length >= MAX_RECIPIENTS}>
+                + Add address
+              </button>
+              {address && !hasRow(address) ? (
+                <button type="button" className={btn.secondarySm} onClick={() => quickAdd(address)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
+                  + Me ({shortAddr(address)})
+                </button>
               ) : null}
-              <p className={helper}>Fixed forever at launch. Not even you can change it later. That&apos;s the point.</p>
+              {!hasRow(DEAD) ? (
+                <button type="button" className={btn.secondarySm} onClick={() => quickAdd(DEAD)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
+                  + Burn a share
+                </button>
+              ) : null}
+              <span className={`ml-auto text-xs tnum ${split.remainingBps === 0 ? "text-up" : "text-warm-ink"}`}>
+                {split.remainingBps === 0 ? "Shares add up to 100%" : split.remainingBps > 0 ? `${bpsToPct(split.remainingBps)}% left to assign` : `${bpsToPct(-split.remainingBps)}% over`}
+              </span>
             </div>
-          ) : (
-            <p className={helper}>A 0% pool: trades cost only Uniswap gas. Nobody, including you, earns from volume.</p>
-          )}
-        </section>
+            <p className={helper}>Shares in percent, up to two decimals, must total exactly 100%. A row with 0x…dEaD burns that share.</p>
+          </div>
+        </LaunchFeeSettings>
 
         {/* submit */}
         <section className="space-y-5 py-8">
@@ -789,7 +763,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
           </div>
           {buyPreview ? (
             <p className="text-sm text-body">
-              Estimated buy: about <span className="font-mono font-bold text-ink tnum">{fmtCompact(buyPreview.tokensOut, 0)}</span> {symbolClean || "tokens"}{" "}
+              Estimated buy: about <span className="font-mono font-bold text-ink tnum">{fmtCompact(buyPreview.tokensOut, 0)}</span> <span className="break-all">{symbolClean || "tokens"}</span>{" "}
               <span className="font-mono text-muted tnum">({fmtPct(buyPreview.pctOfSupply)} of supply{buyUsd ? ` · ≈ ${fmtUsd(buyUsd)}` : ""})</span>. Estimated market cap after your buy:{" "}
               <span className="font-mono font-bold text-ink tnum">{cap(buyPreview.fdvAfter).main}</span><span className="font-mono text-muted tnum"> · {cap(buyPreview.fdvAfter).detail}</span>. Includes price impact and the pool fee; the exact amount is quoted on-chain right before the buy.
             </p>
@@ -849,7 +823,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             <TokenAvatar chain={chain} token={`0x${symbolClean || "token"}`} symbol={symbolClean || "?"} image={/^https:\/\//.test(image.trim()) ? image.trim() : null} size={48} />
             <div className="min-w-0">
               <div className="font-semibold text-ink truncate">{name.trim() || "Your token"}</div>
-              <div className="font-mono text-xs text-muted">{symbolClean || "TICKER"}</div>
+              <div className="font-mono text-xs text-muted truncate">{symbolClean || "TICKER"}</div>
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               {quote.key === "gitlawb" ? <GitlawbBadge size="md" /> : null}
