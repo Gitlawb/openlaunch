@@ -17,6 +17,7 @@ import { DEAD, DEFAULT_SUPPLY, FEE_PRESETS, MAX_RECIPIENTS, TICK_SPACING, launch
 import { bpsToPct, buildRecipients, describeShares, emptyRow, isBurnAddress, type Recipient, type RecipientRow } from "@/lib/launchpad/recipients";
 import { capChipLabel, capDisplay, capEntry, capPick, capPresets, capToQuote } from "@/lib/launchpad/market-cap";
 import { uppercaseInPlace } from "@/lib/launchpad/symbol-input";
+import { sanitizeDecimalInput, resolveCustomMcapInput } from "@/lib/launchpad/decimal-input";
 import { fdvForStartTick, fmtCompact, fmtQuoteUnits, fmtUsd, initialBuyPreview, minOut, startTickForFdv, tickToTokensPerQuote, units } from "@/lib/launchpad/math";
 import { BUY_PRESETS, defaultFirstBuy, suggestFirstBuy } from "@/lib/launchpad/first-buy";
 import { getFirstBuyDeclined, getFirstBuyDeclinedServer, setFirstBuyDeclined, subscribeFirstBuyDeclined } from "@/lib/launchpad/first-buy-session";
@@ -654,7 +655,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
               <input
                 className={`${input} h-11 w-36 font-mono pr-12`}
                 value={customMcap}
-                onChange={(e) => setCustomMcap(e.target.value.replace(/[^0-9.]/g, ""))}
+                onChange={(e) => {
+                  const next = resolveCustomMcapInput(e.target.value);
+                  if (next.clearPick) setMcapPick(null);
+                  setCustomMcap(next.value);
+                }}
                 placeholder="custom"
                 inputMode="decimal"
                 aria-label={`custom starting market cap in ${entry.unit === "usd" ? "USD" : quote.symbol}`}
@@ -749,7 +754,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
               <input
                 className={`${input} h-11 w-40 font-mono pr-16`}
                 value={initialBuy}
-                onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ""); if (v) chooseFirstBuy(v); else declineFirstBuy(); }}
+                onChange={(e) => { const v = sanitizeDecimalInput(e.target.value); if (v) chooseFirstBuy(v); else declineFirstBuy(); }}
                 placeholder="none"
                 inputMode="decimal"
                 aria-label={`first buy amount in ${quote.symbol}`}

@@ -142,3 +142,11 @@ test("beneficiary split: recipients come from the tested helper, and the summary
   assert.match(source, /describeShares\(recipients, shortAddr\)/);
   assert.match(source, /split \$\{recipients\.length \|\| rows\.length\} ways/);
 });
+
+test("custom market-cap entry clears the preset pick when sanitization rejects the value", () => {
+  // With a preset active, typing 1e-7 sanitizes to "" — the preset must clear,
+  // otherwise mcapEntered falls back to the old preset cap while the field shows empty.
+  assert.match(source, /resolveCustomMcapInput\(e\.target\.value\)/);
+  assert.match(source, /if \(next\.clearPick\) setMcapPick\(null\)/);
+  assert.match(source, /setCustomMcap\(next\.value\)/);
+});
