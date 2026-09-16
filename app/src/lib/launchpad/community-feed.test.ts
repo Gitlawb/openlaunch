@@ -17,6 +17,19 @@ test("community filters stay chain-scoped and search loaded content without muta
   assert.deepEqual(filterCommunityPosts(posts, null, " "), posts);
   assert.equal(posts.length, 2);
 });
+test("Arc posts remain searchable and reveal independently from the other chains", () => {
+  const arc = { ...posts[0], id: 3, chain: "arc", symbol: "ARC", body: "Arc launch discussion" };
+  const base = { ...posts[0], id: 4 };
+  const source = [base, arc, ...posts];
+  assert.deepEqual(filterCommunityPosts(source, "arc", "discussion"), [arc]);
+  assert.deepEqual(filterCommunityPosts(source, "arc", "moon"), []);
+  const queued = reconcileCommunityWindow({ visible: posts, pending: [] }, source, true);
+  const selected = filterCommunityPosts(queued.pending, "arc", "");
+  const revealed = revealCommunityPosts(queued, source, selected.map((post) => post.id));
+  assert.deepEqual(revealed.visible, [arc, ...posts]);
+  assert.deepEqual(revealed.pending, [base], "revealing Arc does not discard Base notifications");
+  assert.deepEqual(reconcileCommunityWindow(revealed, source, true), revealed);
+});
 test("community refresh compares the shared 30-post window while retaining full server results", () => {
   const rows = Array.from({ length: 100 }, (_, id) => ({ ...posts[0], id }));
   assert.equal(communityFingerprint(rows), communityFingerprint(rows.slice(0, 30)));

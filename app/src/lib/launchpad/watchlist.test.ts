@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { CHAIN_KEYS, type ChainKey } from "../chainKeys.ts";
 import {
   createWatchlistStore, markWatchlistSeen, parseWatchlist, serializeWatchlist, toggleWatchlistEntry,
-  WATCHLIST_LIMIT, WATCHLIST_SERVER_SNAPSHOT, watchlistKey,
+  WATCHLIST_LIMIT, WATCHLIST_SERVER_SNAPSHOT, WATCHLIST_STORAGE_KEY, watchlistKey,
   type WatchlistEntry, type WatchlistIdentity,
 } from "./watchlist.ts";
 
 const NOW = 1_800_000_000_000;
-const token = (n = 1, chain: "base" | "robinhood" = "base"): WatchlistIdentity => ({
+const token = (n = 1, chain: ChainKey = "base"): WatchlistIdentity => ({
   chain, token: `0x${n.toString(16).padStart(40, "0")}`, name: `Token ${n}`, symbol: `T${n}`,
 });
 const entry = (n = 1): WatchlistEntry => ({ ...token(n), addedAt: NOW - 1_000, seenAt: null, holders: null });
@@ -22,6 +23,37 @@ test("normalizes identity and keeps the same address on different chains distinc
   assert.equal(result[0].name, "Token A");
   assert.equal(result[0].symbol, "A");
   assert.notEqual(watchlistKey(result[0]), watchlistKey(result[1]));
+});
+
+test("the v1 store retains existing entries when Arc is added, reviewed and reloaded", () => {
+  assert.equal(WATCHLIST_STORAGE_KEY, "openlaunch:watchlist:v1");
+  const storage = memory();
+  const oldEntries = [
+    { ...entry(), seenAt: NOW - 500, holders: 7 },
+    { ...entry(), chain: "robinhood" as const, seenAt: NOW - 100, holders: 3 },
+  ];
+  storage.write(payload(oldEntries));
+  const store = createWatchlistStore(storage, () => NOW);
+  store.refresh();
+  assert.deepEqual(store.getSnapshot().entries, oldEntries);
+  assert.equal(store.toggle(token(1, "arc")), "added");
+  store.markSeen([{ ...token(1, "arc"), seenAt: NOW, holders: 0 }]);
+  const reloaded = createWatchlistStore(storage, () => NOW);
+  reloaded.refresh();
+  assert.equal(JSON.parse(storage.read()!).version, 1);
+  assert.deepEqual(reloaded.getSnapshot().entries, [
+    { ...token(1, "arc"), addedAt: NOW, seenAt: NOW, holders: 0 }, ...oldEntries,
+  ]);
+  assert.equal(new Set(reloaded.getSnapshot().savedKeys).size, CHAIN_KEYS.length);
+  assert.equal(reloaded.toggle(token(1, "arc")), "removed");
+  assert.deepEqual(reloaded.getSnapshot().entries, oldEntries);
+});
+
+test("watchlist identity validation stays aligned with the shared chain registry", () => {
+  const entries = CHAIN_KEYS.map((chain) => ({ ...entry(), ...token(1, chain) }));
+  assert.deepEqual(parseWatchlist(payload(entries), NOW), entries);
+  assert.deepEqual(markWatchlistSeen(entries, CHAIN_KEYS.map((chain) => ({ ...token(1, chain), seenAt: NOW, holders: 1 })), NOW),
+    entries.map((saved) => ({ ...saved, seenAt: NOW, holders: 1 })));
 });
 
 test("corrupt and unsupported payloads are empty rather than throwing", () => {

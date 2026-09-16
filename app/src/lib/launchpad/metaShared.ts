@@ -9,7 +9,7 @@
  *                the salt search runs. (Keying the URI by the salt broke ~1 in 10 USDG/stock launches.)
  */
 import { isAddress, type Hex } from "viem";
-import { SITE_URL, isChainKey, type ChainKey } from "../chainPublic.ts";
+import { SITE_URL, isChainKey, type ChainKey, CHAIN_KEY_PATTERN } from "../chainPublic.ts";
 
 export type MetaInput = { chain: ChainKey; launcher: string; salt: Hex; meta_key: Hex; name: string; symbol: string; description?: string; image_url?: string; website?: string; x_handle?: string };
 export const LIMITS = { name: 32, symbol: 10, description: 280 } as const;
@@ -20,7 +20,7 @@ export function validateMeta(m: Partial<MetaInput> & { meta_key?: string }): { o
   const symbol = (m.symbol ?? "").trim().toUpperCase();
   if (!name || name.length > LIMITS.name) return { ok: false, error: `name: 1–${LIMITS.name} characters` };
   if (!/^[A-Z0-9]{1,10}$/.test(symbol)) return { ok: false, error: "symbol: 1–10 letters or digits" };
-  if (!isChainKey(m.chain)) return { ok: false, error: "chain: base | robinhood" };
+  if (!isChainKey(m.chain)) return { ok: false, error: `chain: ${CHAIN_KEY_PATTERN.replace(/\|/g, " | ")}` };
   if (!m.launcher || !isAddress(m.launcher)) return { ok: false, error: "launcher: bad address" };
   if (!m.salt || !BYTES32.test(m.salt)) return { ok: false, error: "salt: bad bytes32" };
   const meta_key = (m.meta_key ?? m.salt) as Hex; // older clients: the salt doubles as the key

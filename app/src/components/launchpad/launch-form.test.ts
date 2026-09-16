@@ -10,9 +10,13 @@ const ast = ts.createSourceFile("LaunchForm.tsx", source, ts.ScriptTarget.Latest
 
 test("launch merge preserves optional funding checks and post-launch buy isolation", () => {
   assert.match(source, /initialBuyRaw && address && buyBalance === undefined/);
-  assert.match(source, /initialBuyRaw \+ \(quote\.key === "eth" \? GAS_RESERVE_WEI : 0n\) > buyBalance/);
-  // the reserve covers both transactions: the launch is sent first and pays its own gas before the buy runs
-  assert.match(source, /const GAS_RESERVE_WEI = LAUNCH_GAS_WEI \+ BUY_GAS_WEI;/);
+  assert.match(source, /initialBuyRaw \+ reserveInQuote > buyBalance/);
+  // the reserve covers both transactions (the launch is sent first and pays its own gas before the buy runs) and is per chain;
+  // it comes out of the quote balance for ETH and for a quote that IS the gas token (USDC on Arc), never for another ERC-20
+  assert.match(source, /const gasReserve = GAS_RESERVE_WEI\[chain\];/);
+  assert.match(source, /const sharedGas = sharesGasBalance\(chain, quote\);/);
+  assert.match(source, /const reserveInQuote = quote\.key === "eth" \|\| sharedGas \? gasReserveInQuote\(gasReserve, quote\.decimals\) : 0n;/);
+  assert.doesNotMatch(source, /not enough ETH/, "gas copy names the chain's native asset, not ETH");
   assert.match(source, /if \(initialBuyRaw && ev\?\.args\.token\) \{\s*try \{/);
   assert.match(source, /buyProblem = friendlyError\(err, \{ slippagePct: FIRST_BUY_SLIPPAGE_BPS \/ 100 \}\)/);
   const receiptCheck = source.indexOf('if (receipt.status !== "success")');
@@ -29,9 +33,10 @@ test("launch merge retains chain-scoped marks and honest optional-buy copy", () 
   assert.match(source, /<TokenAvatar chain=\{chain\}/);
   assert.match(source, /label=\{initialBuyRaw \? "Launch \+ first buy" : "Launch for free, gas only"\}/);
   // a suggested buy is computed from a known, sufficient balance and can be cleared; a typed amount keeps the strict checks
-  assert.match(source, /suggestFirstBuy\(\{ quote, connected: Boolean\(address\) && onChain, balance: buyBalance, nativeBalance, balanceFailed: buyBalanceFailed \|\| ethBal\.isError, gasReserve: GAS_RESERVE_WEI, declined: buyDeclined \|\| Boolean\(typedBuy\)/);
+  assert.match(source, /suggestFirstBuy\(\{ quote, connected: Boolean\(address\) && onChain, balance: buyBalance, nativeBalance, balanceFailed: buyBalanceFailed \|\| ethBal\.isError, gasReserve, sharesGasBalance: sharedGas, declined: buyDeclined \|\| Boolean\(typedBuy\)/);
   // an ERC-20 quote's typed buy is checked for native gas too, not only the token balance
-  assert.match(source, /initialBuyRaw && quote\.key !== "eth" && nativeBalance !== undefined && nativeBalance < GAS_RESERVE_WEI/);
+  // …and only for a quote that does not share the gas balance (Arc USDC already had the reserve applied above: one shortfall, one message)
+  assert.match(source, /initialBuyRaw && quote\.key !== "eth" && !sharedGas && nativeBalance !== undefined && nativeBalance < gasReserve/);
   assert.match(source, /const initialBuy = typedBuy \|\| suggestion\.amount \|\| ""/);
   // a typed amount is bound to the quote it was typed for, so a chain or quote switch drops it instead of re-reading it as another asset
   assert.match(source, /const quoteId = `\$\{chain\}:\$\{quote\.address\.toLowerCase\(\)\}`/);
@@ -114,15 +119,21 @@ test("stock quote: one blocking message, a chip that names the issuer, a way out
   assert.doesNotMatch(source, /aria-live/);
   assert.doesNotMatch(source, /data-testid|\(registry\)|Quote = \{/);
   // the picked stock chip says whose stock it is and can be cleared; "Switch quote" returns to the first configured quote
-  assert.match(source, /\{stock\.symbol\}\s*<span className="[^"]*">\{chain === "base" \? "Coinbase stock" : "Robinhood stock"\}<\/span>/);
+  assert.match(source, /\{stock\.symbol\}\s*<span className="[^"]*">\{CHAIN_COPY\[chain\]\.stock\?\.badge\}<\/span>/);
+  assert.match(source, /badge: "Coinbase stock"/);
+  assert.match(source, /badge: "Robinhood stock"/);
+  // a chain without a stock registry (Arc) says so in the copy table and gets no Stock quote button at all
+  assert.match(source, /arc: \{[^}]*stock: null,/);
+  assert.match(source, /\.\.\.\(STOCK_SOURCE\[chain\] \? \[\{ key: "stock" as const, label: "Stock" \}\] : \[\]\)/);
   assert.match(source, /aria-label="clear stock quote"/);
   assert.match(source, /Switch quote/);
   assert.match(source, /setQuoteKey\(cfg\.quotes\[0\]\?\.key \?\? "eth"\);\s*setStock\(null\);\s*setStockQ\(""\);\s*setMcapPick\(null\);\s*setCustomMcap\(""\);/);
   // switching chains drops the picked stock: a registry address from one chain must never become the other chain's quote
   // ...but re-clicking the active chain is a no-op, so it cannot wipe the picked stock
   assert.match(source, /if \(k === chain\) return;[^}]*setChain\(k\);\s*setQuoteKey\(launchpad\(k\)\.quotes\[0\]\.key\);[^}]*setStock\(null\);\s*setStockQ\(""\);\s*setStockHits\(\[\]\);/);
-  // the issuer disclaimer is rendered from one helper for both chains
-  assert.match(source, /<p className=\{helper\}>\{stockIssuerDisclaimer\(chain\)\}<\/p>/);
+  // the issuer disclaimer is rendered from the per-chain copy table (a Record<ChainKey, …>: a new chain must write its own)
+  assert.match(source, /const CHAIN_COPY: Record<ChainKey, \{/);
+  assert.match(source, /<p className=\{helper\}>\{CHAIN_COPY\[chain\]\.stock\?\.issuer\}<\/p>/);
 });
 
 test("beneficiary split: recipients come from the tested helper, and the summary reflects the split", () => {

@@ -5,6 +5,7 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import type { FeedItem } from "@/lib/launchpad/queries";
 import * as queueFunctions from "@/lib/launchpad/toast-queue";
+import { fmtQuote } from "@/lib/launchpad/math";
 
 type Element = { type: unknown; props: Record<string, unknown>; children: unknown[] };
 const jsx = { createElement: (type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): Element => ({ type, props: props ?? {}, children }), Fragment: "fragment" };
@@ -26,7 +27,7 @@ function elements(node: unknown): Element[] {
   return [element, ...element.children.flatMap(elements)];
 }
 
-function harness(initial: FeedItem[] = [], enabled = false, initialAt?: number) {
+function harness(initial: FeedItem[] = [], enabled = false, initialAt?: number, overrides: Record<string, unknown> = {}) {
   let state = queueFunctions.createToastQueue();
   let now = 0;
   let hook = 0;
@@ -54,6 +55,7 @@ function harness(initial: FeedItem[] = [], enabled = false, initialAt?: number) 
     setTimeout: (fn: () => void, delay: number) => { timers.set(++timerId, { fn, delay }); return timerId; },
     clearTimeout: (id: number) => timers.delete(id),
     ToastCard: "ToastCard", Confetti: "Confetti", CHAIN_SHORT: { base: "Base" }, shortAddr: () => "wallet", fmtQuote: () => "1 ETH",
+    ...overrides,
   });
   function render() {
     hook = 0;
@@ -79,6 +81,7 @@ function harness(initial: FeedItem[] = [], enabled = false, initialAt?: number) 
   };
 }
 
+const swap = (id: string, quote_wei: string, quote_decimals: number, quote_symbol: string, is_buy = true): FeedItem => ({ kind: "swap", chain: "base", at: "2026-09-01T00:00:00Z", tx_hash: id, log_index: 7, token: "dusty", name: "Dusty", symbol: "DUSTY", trader: "0xabc", is_buy, is_dev: false, quote_wei, quote_key: quote_decimals === 6 ? "usdg" : "eth", quote_symbol, quote_decimals, usd: null, image_url: null });
 const launch = (id: string): FeedItem => ({ kind: "launch", chain: "base", at: "2026-09-01T00:00:00Z", tx_hash: id, token: id, name: id, symbol: id, launcher: "wallet", lp_fee: 0, quote_key: "eth", image_url: null });
 const invoke = (element: Element, handler: string, ...args: unknown[]) => (element.props[handler] as (...args: unknown[]) => void)(...args);
 const cardBindings = { Link: "Link", TokenAvatar: "TokenAvatar", ArrowDownLeft: "ArrowDownLeft", ArrowUpRight: "ArrowUpRight", Check: "Check", Coins: "Coins", Info: "Info", Plus: "Plus", X: "X", CHAIN_SHORT: { base: "Base", robinhood: "Robinhood" }, TOAST_TTL_MS: queueFunctions.TOAST_TTL_MS };
@@ -308,5 +311,22 @@ test("a timer that fires early re-arms for the remainder instead of freezing the
   h.now(queueFunctions.TOAST_TTL_MS + queueFunctions.TOAST_EXIT_MS);
   exit.fn();
   assert.equal(h.state().active?.title, "Your sell", "and the queue moves on");
+  h.unmount();
+});
+
+test("a swap under the display floor never toasts as a bare 0: the real formatter says \"<0.01\" / \"<0.00000001\"", () => {
+  const history = launch("history");
+  const h = harness([history], true, undefined, { fmtQuote });
+  h.render();
+  h.feed([history]);
+  // 4,999 raw USDG (under half a cent) used to read "Buy 0 USDG of DUSTY"
+  h.feed([swap("dust-usdg", "4999", 6, "USDG"), history]);
+  assert.equal(h.state().active?.title, "Buy <0.01 USDG of DUSTY");
+  h.feed([swap("dust-eth", "4999999999", 18, "ETH", false), swap("dust-usdg", "4999", 6, "USDG"), history]);
+  assert.equal(h.state().pending[0]?.title, "Sell <0.00000001 ETH of DUSTY");
+  // the first amount that shows a digit still shows it
+  h.feed([swap("cent", "5000", 6, "USDG"), swap("dust-eth", "4999999999", 18, "ETH", false), swap("dust-usdg", "4999", 6, "USDG"), history]);
+  assert.equal(h.state().pending[1]?.title, "Buy 0.01 USDG of DUSTY");
+  for (const card of [h.state().active, ...h.state().pending]) assert.doesNotMatch(card?.title ?? "", /\b0 (USDG|ETH)\b/, "no card reads as a zero-amount trade");
   h.unmount();
 });

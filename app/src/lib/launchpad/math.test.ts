@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fdvForStartTick, fmtCompact, fmtEth, fmtQuoteUnits, fmtPrice, fmtUnitsExact, fmtUsd, initialBuyPreview, minOut, poolIdOf, quoteUsdOf, startTickForFdv, sqrtPriceToTokensPerQuote, tickToTokensPerQuote } from "./math.ts";
+import { fdvForStartTick, fmtCompact, fmtEth, fmtQuote, fmtQuoteUnits, fmtPrice, fmtUnitsExact, fmtUsd, initialBuyPreview, minOut, poolIdOf, quoteDisplayFloor, quoteUsdOf, startTickForFdv, sqrtPriceToTokensPerQuote, tickToTokensPerQuote } from "./math.ts";
 import { encodeV4ExactInSingle } from "./swap.ts";
 
 test("startTickForFdv: 10 ETH FDV on 1B supply ≈ tick 184200 (1 ETH = 100M tokens)", () => {
@@ -91,13 +91,13 @@ test("encodeV4ExactInSingle v2 layout carries minHopPriceX36 (Robinhood router)"
   assert.equal(v2.inputs[0].length - v1.inputs[0].length, 64, "one extra uint256 word");
 });
 
-test("quoteUsdOf: stables/stocks use their own price, ETH only for the native address, unknown ERC20 is never priced", () => {
-  const NATIVE = "0x0000000000000000000000000000000000000000";
-  assert.equal(quoteUsdOf({ address: NATIVE, usd: null }, 2500), 2500);
-  assert.equal(quoteUsdOf({ address: NATIVE, usd: null }, null), null, "no ETH price → unknown, not 0");
-  assert.equal(quoteUsdOf({ address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", usd: 1 }, 2500), 1, "USDG");
-  assert.equal(quoteUsdOf({ address: "0xabc0000000000000000000000000000000000001", usd: 229.01 }, 2500), 229.01, "stock with live price");
-  assert.equal(quoteUsdOf({ address: "0xabc0000000000000000000000000000000000001", usd: null }, 2500), null, "unknown ERC20 must not be priced as ETH");
+test("quoteUsdOf: stables/stocks use their own price, ETH only for the ETH quote, unknown ERC20 and a bare native address are never priced", () => {
+  assert.equal(quoteUsdOf({ key: "eth", usd: null }, 2500), 2500);
+  assert.equal(quoteUsdOf({ key: "eth", usd: null }, null), null, "no ETH price → unknown, not 0");
+  assert.equal(quoteUsdOf({ key: "usdg", usd: 1 }, 2500), 1, "USDG");
+  assert.equal(quoteUsdOf({ key: "usdc", usd: 1 }, 2500), 1, "Arc's native USDC carries its own dollar; address(0) alone is not ETH");
+  assert.equal(quoteUsdOf({ key: "stock", usd: 229.01 }, 2500), 229.01, "stock with live price");
+  assert.equal(quoteUsdOf({ key: "stock", usd: null }, 2500), null, "unknown ERC20 must not be priced as ETH");
 });
 
 test("initialBuyPreview: a tiny first buy pays the opening price; bigger buys get less per ETH", () => {
@@ -124,6 +124,26 @@ test("initialBuyPreview: the LP fee reduces output; quote decimals are honoured"
   const u = initialBuyPreview({ startTick: t6, amountInRaw: 10n * 10n ** 6n, quoteDecimals: 6 });
   assert.ok(u.pctOfSupply > 0.9 && u.pctOfSupply < 1.0, `got ${u.pctOfSupply}`);
   assert.ok(u.fdvAfter > 1_000 && u.fdvAfter < 1_100, `fdv after ${u.fdvAfter}`);
+});
+
+test("fmtQuoteUnits: a real amount never prints as a bare 0", () => {
+  assert.equal(quoteDisplayFloor(6), 0.005);
+  assert.equal(quoteDisplayFloor(18), 5e-9);
+  assert.equal(quoteDisplayFloor(8), 5e-9);
+  // USDG dust: 4,999 raw units used to read "0 USDG" in the tape and the toasts
+  assert.equal(fmtQuote("4999", 6, "USDG"), "<0.01 USDG");
+  assert.equal(fmtQuote("1", 6, "USDG"), "<0.01 USDG");
+  assert.equal(fmtQuote("5000", 6, "USDG"), "0.01 USDG");
+  // 18-dec quotes: under 5 gwei
+  assert.equal(fmtQuote("4999999999", 18, "ETH"), "<0.00000001 ETH");
+  assert.equal(fmtQuote("1", 18, "GITLAWB"), "<0.00000001 GITLAWB");
+  assert.equal(fmtQuote("5000000000", 18, "ETH"), "0.00000001 ETH");
+  assert.equal(fmtQuote("1", 8, "MSTRc"), "0.00000001 MSTRc");
+  assert.equal(fmtQuoteUnits(-0.001, 6), "<0.01", "sign-agnostic: callers pass magnitudes");
+  // only an exact zero is "0": empty volume stats keep reading 0
+  assert.equal(fmtQuote("0", 6, "USDG"), "0 USDG");
+  assert.equal(fmtQuote("0", 18, "ETH"), "0 ETH");
+  assert.equal(fmtQuoteUnits(0, 18), "0");
 });
 
 test("fmtQuoteUnits: stables 2dp, 18-dec ETH-style below 100K, compact above with suffix promotion", () => {

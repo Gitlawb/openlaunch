@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 import type { WatchlistData, WatchlistRequestItem } from "./watchlistData";
+import { CHAIN_IDS, isChainKey, type ChainKey } from "../chainKeys.ts";
 
 const source = readFileSync(new URL("./watchlistData.ts", import.meta.url), "utf8");
 const route = readFileSync(new URL("../../app/api/launch/watchlist/route.ts", import.meta.url), "utf8");
@@ -26,10 +27,12 @@ function isolatedData(configured = true) {
   const launches = [
     { launch: { chain: "base", token: TOKEN, name: "Base token" }, holders: 0 },
     { launch: { chain: "robinhood", token: TOKEN, name: "Robinhood token" }, holders: null },
+    { launch: { chain: "arc", token: TOKEN, name: "Arc token" }, holders: 4 },
   ];
   const counts = [
     { chain_id: 8453, token: TOKEN, trades: "0", creator_posts: "2" },
     { chain_id: 4663, token: TOKEN, trades: "8", creator_posts: "0" },
+    { chain_id: 5042, token: TOKEN, trades: "3", creator_posts: "1" },
   ];
   const db = Object.assign(async (parts: TemplateStringsArray, ...values: unknown[]) => {
     calls.sql.push({ sql: parts.join("?"), values });
@@ -38,7 +41,7 @@ function isolatedData(configured = true) {
   const imported = compile(source, {
     "server-only": {},
     "@/lib/db": { maybeDb: () => configured ? db : null },
-    "@/lib/chainPublic": { chainIdOf: (chain: string) => chain === "base" ? 8453 : 4663, isChainKey: (chain: unknown) => chain === "base" || chain === "robinhood" },
+    "@/lib/chainPublic": { chainIdOf: (chain: ChainKey) => CHAIN_IDS[chain], isChainKey },
     "./queries": { getLaunchesByRefs: async (...args: unknown[]) => { calls.launch.push(args); return launches; } },
   });
   const api = imported as unknown as {
@@ -62,6 +65,18 @@ test("watchlist input normalizes addresses, deduplicates within a chain, and pre
     { chain: "base", token: TOKEN, since: NOW - 1 },
     { chain: "robinhood", token: TOKEN, since: null },
   ]);
+});
+
+test("Arc snapshots use their own chain ID and do not inherit another chain's activity", async () => {
+  const { getWatchlistData, calls } = isolatedData();
+  const items: WatchlistRequestItem[] = [{ chain: "arc", token: TOKEN, since: NOW - 500 }];
+  const response = await getWatchlistData(items, NOW, 3_000);
+  assert.equal(response.items[0].launch?.chain, "arc");
+  assert.equal(response.items[0].holders, 4);
+  assert.equal(response.items[0].trades, 3);
+  assert.equal(response.items[0].creatorPosts, 1);
+  assert.deepEqual(calls.launch, [[items, 3_000]]);
+  assert.deepEqual(calls.sql[0].values, [[{ chain_id: 5042, token: TOKEN, since: new Date(NOW - 500).toISOString() }], NOW / 1_000, NOW / 1_000]);
 });
 
 test("watchlist rejects malformed, oversized, and future-dated input before reads", async () => {

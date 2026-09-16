@@ -64,6 +64,8 @@ export default async function OgImage() {
             <span>Base</span>
             <span style={{ color: LINE }}>·</span>
             <span>Robinhood Chain</span>
+            <span style={{ color: LINE }}>·</span>
+            <span>Arc</span>
           </div>
           <span style={{ marginTop: 18, fontSize: 24, color: MUTED, maxWidth: 880, lineHeight: 1.4 }}>
             One transaction deploys your token and locks 100% of supply as Uniswap v4 liquidity forever. Nobody can pull it. We take nothing.

@@ -13,16 +13,16 @@ import GitlawbBadge from "./GitlawbBadge";
 import { toast } from "./TxToasts";
 import { btn, helper, input, label } from "@/components/ui";
 import { ERC20_MIN_ABI, ERC20_TRANSFER_EVENT, LAUNCH_FACTORY_ABI, PERMIT2_ABI, UNIVERSAL_ROUTER_ABI, V4_QUOTER_ABI } from "@/lib/launchpad/abi";
-import { DEAD, DEFAULT_SUPPLY, FEE_PRESETS, MAX_RECIPIENTS, TICK_SPACING, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
+import { DEAD, DEFAULT_SUPPLY, FEE_PRESETS, GAS_RESERVE_WEI, MAX_RECIPIENTS, STOCK_SOURCE, TICK_SPACING, launchpad, quoteUsdOf, sharesGasBalance, type Quote } from "@/lib/launchpad/config";
 import { bpsToPct, buildRecipients, describeShares, emptyRow, isBurnAddress, type Recipient, type RecipientRow } from "@/lib/launchpad/recipients";
 import { capChipLabel, capDisplay, capEntry, capPick, capPresets, capToQuote } from "@/lib/launchpad/market-cap";
 import { uppercaseInPlace } from "@/lib/launchpad/symbol-input";
 import { fdvForStartTick, fmtCompact, fmtQuoteUnits, fmtUsd, initialBuyPreview, minOut, startTickForFdv, tickToTokensPerQuote, units } from "@/lib/launchpad/math";
-import { BUY_PRESETS, defaultFirstBuy, suggestFirstBuy } from "@/lib/launchpad/first-buy";
+import { BUY_PRESETS, defaultFirstBuy, gasReserveInQuote, suggestFirstBuy } from "@/lib/launchpad/first-buy";
 import { getFirstBuyDeclined, getFirstBuyDeclinedServer, setFirstBuyDeclined, subscribeFirstBuyDeclined } from "@/lib/launchpad/first-buy-session";
 import { encodeV4ExactInSingle, type PoolKey } from "@/lib/launchpad/swap";
 import { GITLAWB_SITE } from "@/lib/launchpad/gitlawb";
-import { CHAINS, CHAIN_LABELS, CHAIN_KEYS, BUILDER_DATA_SUFFIX, explorerTx, shortAddr, type ChainKey } from "@/lib/chainPublic";
+import { CHAINS, CHAIN_LABELS, CHAIN_KEYS, DEFAULT_CHAIN, BUILDER_DATA_SUFFIX, explorerTx, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { friendlyError } from "@/lib/errors";
 import { Spinner } from "@/components/Skeleton";
 import { startNav } from "@/components/RouteProgress";
@@ -50,11 +50,8 @@ type Phase =
 const UNCONFIGURED_CHAIN_COPY = process.env.NODE_ENV === "production" ? "Coming soon." : "Not configured here. Contract settings are missing in this environment.";
 const FIRST_BUY_SLIPPAGE_BPS = 300; // Other buyers can trade between the launch and this separate buy.
 const PERMIT_EXPIRY_S = 30 * 24 * 3600;
-// Native ETH kept back from a first buy: the launch transaction is sent first and pays its own gas, then the buy (and, for
-// an ERC-20 quote, its approvals). Both parts are generous for Base and Robinhood Chain gas prices.
-const LAUNCH_GAS_WEI = 1_000_000_000_000_000n; // 0.001 ETH: deploy + pool init + position mint
-const BUY_GAS_WEI = 500_000_000_000_000n; // 0.0005 ETH: approvals + swap
-const GAS_RESERVE_WEI = LAUNCH_GAS_WEI + BUY_GAS_WEI;
+// The native amount kept back from a first buy for gas is per chain (lib/launchpad/config.ts GAS_RESERVE_WEI): the launch
+// transaction is sent first and pays its own gas, then the buy (and, for an ERC-20 quote, its approvals).
 
 function randomSalt(): Hex {
   const b = new Uint8Array(32);
@@ -65,11 +62,34 @@ function randomSalt(): Hex {
 /** Shown wherever the form is blocked on a stock choice: one sentence, one place. */
 const STOCK_PICK_MESSAGE = "Pick a stock to price the token in, or switch the quote.";
 
-function stockIssuerDisclaimer(chain: ChainKey): string {
-  return chain === "base"
-    ? "Coinbase tokenized stocks are securities issued by Coinbase under Regulation S and are not offered to persons in the US, UK, Canada, Australia, Singapore or Switzerland. That is Coinbase's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4."
-    : "Robinhood Stock Tokens are tokenised securities issued by Robinhood and are not offered to US persons. That is Robinhood's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.";
-}
+/** Per-chain copy in the form. A chain's quotes and stock registry differ, so its sentences do too; `stock` is null where no registry exists. */
+const CHAIN_COPY: Record<ChainKey, { blurb: string; gitlawbOrigin: string; stock: { pays: string; badge: string; empty: string; issuer: string } | null }> = {
+  base: {
+    blurb: "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents.",
+    gitlawbOrigin: " on Base",
+    stock: {
+      pays: "Buyers pay with a Coinbase tokenized stock; fees are paid in that stock.",
+      badge: "Coinbase stock",
+      empty: "No match. 13 Coinbase tokenized stocks are available on Base: NVDAc, AAPLc, TSLAc, METAc, GOOGLc, AMZNc, MSFTc, MSTRc, COINc, CRCLc, INTCc, SNDKc, SPCXc.",
+      issuer: "Coinbase tokenized stocks are securities issued by Coinbase under Regulation S and are not offered to persons in the US, UK, Canada, Australia, Singapore or Switzerland. That is Coinbase's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.",
+    },
+  },
+  robinhood: {
+    blurb: "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents.",
+    gitlawbOrigin: ", bridged 1:1 from Base to Robinhood Chain over LayerZero",
+    stock: {
+      pays: "Buyers pay with a Robinhood Stock Token; fees are paid in that stock.",
+      badge: "Robinhood stock",
+      empty: "No match. 194 Robinhood Stock Tokens are available, e.g. AAPL, TSLA, NVDA, SPY.",
+      issuer: "Robinhood Stock Tokens are tokenised securities issued by Robinhood and are not offered to US persons. That is Robinhood's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.",
+    },
+  },
+  arc: {
+    blurb: "Priced in USDC (dollars). Gas is paid in USDC too: cents per trade, well under a dollar to launch.",
+    gitlawbOrigin: "",
+    stock: null,
+  },
+};
 
 type FirstBuyCtx = { pub: PublicClient; wallet: WalletClient; address: Address; V4: ReturnType<typeof launchpad>["v4"]; quote: Quote; feePips: number; CHAIN: (typeof CHAINS)[ChainKey]; setPhase: (p: Phase) => void };
 
@@ -141,7 +161,7 @@ async function firstBuy(ctx: FirstBuyCtx, tokenAddr: Address, launchHash: Hex, a
   return received > 0n ? { hash: h, out: received, exact: true } : { hash: h, out, exact: false };
 }
 
-export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "base" }: { ethUsd: number | null; gitlawbUsd?: number | null; initialChain?: ChainKey }) {
+export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = DEFAULT_CHAIN }: { ethUsd: number | null; gitlawbUsd?: number | null; initialChain?: ChainKey }) {
   const router = useRouter();
   const [chain, setChain] = useState<ChainKey>(initialChain);
   const cfg = launchpad(chain);
@@ -155,6 +175,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const staticQuote: Quote = quoteKey === "stock" && stock ? stock : (cfg.quotes.find((q) => q.key === quoteKey) ?? cfg.quotes[0]);
   const quote: Quote = staticQuote.key === "gitlawb" ? { ...staticQuote, usd: gitlawbUsd } : staticQuote;
   const quoteUsd = quoteUsdOf(quote, ethUsd);
+  const NATIVE_SYMBOL = CHAIN.nativeCurrency.symbol;
+  const gasReserve = GAS_RESERVE_WEI[chain];
+  // On Arc the USDC quote IS the gas token (one balance, two faces): the reserve then comes out of the quote balance as well.
+  const sharedGas = sharesGasBalance(chain, quote);
+  const reserveInQuote = quote.key === "eth" || sharedGas ? gasReserveInQuote(gasReserve, quote.decimals) : 0n;
   // stock search (per-chain registry via our server; only registry addresses are ever offered)
   useEffect(() => {
     if (quoteKey !== "stock") return;
@@ -237,7 +262,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const buyBalanceFailed = quote.key === "eth" ? ethBal.isError : quoteBal.isError;
   // The suggested buy is selected from the start; a connected wallet's balances can only take it away (or a failed read),
   // so it can never block the launch below. A typed amount keeps the strict checks.
-  const suggestion = suggestFirstBuy({ quote, connected: Boolean(address) && onChain, balance: buyBalance, nativeBalance, balanceFailed: buyBalanceFailed || ethBal.isError, gasReserve: GAS_RESERVE_WEI, declined: buyDeclined || Boolean(typedBuy), parse: parseUnits });
+  const suggestion = suggestFirstBuy({ quote, connected: Boolean(address) && onChain, balance: buyBalance, nativeBalance, balanceFailed: buyBalanceFailed || ethBal.isError, gasReserve, sharesGasBalance: sharedGas, declined: buyDeclined || Boolean(typedBuy), parse: parseUnits });
   const initialBuy = typedBuy || suggestion.amount || "";
   const buySource: "typed" | "suggested" | "none" = typedBuy ? "typed" : suggestion.amount ? "suggested" : "none";
   const initialBuyRaw = parseBuyAmount(initialBuy, quote.decimals);
@@ -255,11 +280,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
 
   // the launch is irreversible and the buy comes after it: never let a launch through while the buy's funding is unknown
   if (initialBuyRaw && address && buyBalance === undefined) errors.push(buyBalanceFailed ? `First buy: could not read your ${quote.symbol} balance. Retry, or clear the amount.` : "First buy: checking your balance…");
-  if (initialBuyRaw && buyBalance !== undefined && initialBuyRaw + (quote.key === "eth" ? GAS_RESERVE_WEI : 0n) > buyBalance)
-    errors.push(quote.key === "eth" ? "First buy: not enough ETH (leave a little for gas)." : `First buy: not enough ${quote.symbol} in this wallet.`);
-  // an ERC-20 first buy still pays gas (and its approvals) in ETH: the token balance alone is not enough
-  if (initialBuyRaw && quote.key !== "eth" && address && nativeBalance === undefined) errors.push(ethBal.isError ? "First buy: could not read your ETH balance for gas. Retry, or clear the amount." : "First buy: checking your ETH balance for gas…");
-  if (initialBuyRaw && quote.key !== "eth" && nativeBalance !== undefined && nativeBalance < GAS_RESERVE_WEI) errors.push("First buy: not enough ETH for gas (the launch, the approval and the buy each need a little ETH).");
+  if (initialBuyRaw && buyBalance !== undefined && initialBuyRaw + reserveInQuote > buyBalance)
+    errors.push(reserveInQuote > 0n ? `First buy: not enough ${quote.symbol} (leave a little for gas).` : `First buy: not enough ${quote.symbol} in this wallet.`);
+  // an ERC-20 first buy still pays gas (and its approvals) in the native asset: the token balance alone is not enough
+  if (initialBuyRaw && quote.key !== "eth" && !sharedGas && address && nativeBalance === undefined) errors.push(ethBal.isError ? `First buy: could not read your ${NATIVE_SYMBOL} balance for gas. Retry, or clear the amount.` : `First buy: checking your ${NATIVE_SYMBOL} balance for gas…`);
+  if (initialBuyRaw && quote.key !== "eth" && !sharedGas && nativeBalance !== undefined && nativeBalance < gasReserve) errors.push(`First buy: not enough ${NATIVE_SYMBOL} for gas (the launch, the approval and the buy each need a little ${NATIVE_SYMBOL}).`);
   const valid = errors.length === 0;
   const buyPreview = initialBuyRaw && startTick !== null ? initialBuyPreview({ startTick, amountInRaw: initialBuyRaw, lpFeePips: feePips, quoteDecimals: quote.decimals }) : null;
   const buyUsd = initialBuyRaw && quoteUsd ? units(initialBuyRaw, quote.decimals) * quoteUsd : null;
@@ -404,9 +429,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         <section className="space-y-5 pb-8">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
             <h2 className="text-base font-semibold text-ink">Chain</h2>
-            <span className="text-xs text-muted">same contracts, same rules, on both</span>
+            <span className="text-xs text-muted">same launch, same rules, on every chain</span>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             {CHAIN_KEYS.map((k) => {
               const active = chain === k;
               const ok = launchpad(k).configured;
@@ -430,7 +455,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                   aria-pressed={active}
                 >
                   <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{CHAIN_LABELS[k]}</div>
-                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{!ok ? UNCONFIGURED_CHAIN_COPY : k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents."}</div>
+                  <div className={`mt-1 text-xs leading-relaxed ${active ? "text-brand" : "text-body"}`}>{!ok ? UNCONFIGURED_CHAIN_COPY : CHAIN_COPY[k].blurb}</div>
                 </button>
               );
             })}
@@ -440,7 +465,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             <div className="flex items-center gap-2 flex-wrap">
               <span className={label}>Priced in</span>
               <div className="flex flex-wrap items-center gap-1" role="group" aria-label="quote asset">
-                {[...cfg.quotes.map((q) => ({ key: q.key, label: q.symbol })), { key: "stock" as const, label: "Stock" }].map((q) => (
+                {[...cfg.quotes.map((q) => ({ key: q.key, label: q.symbol })), ...(STOCK_SOURCE[chain] ? [{ key: "stock" as const, label: "Stock" }] : [])].map((q) => (
                   <button
                     key={q.key}
                     type="button"
@@ -457,7 +482,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 ))}
               </div>
               <span className="text-xs text-muted">
-                {quote.key === "usdg" ? "Buyers pay with USDG; market cap and fees are in dollars." : quote.key === "gitlawb" ? "Buyers pay with GITLAWB; fees are paid in GITLAWB, or burned." : quote.key === "stock" ? (chain === "base" ? "Buyers pay with a Coinbase tokenized stock; fees are paid in that stock." : "Buyers pay with a Robinhood Stock Token; fees are paid in that stock.") : "Buyers pay with ETH."}
+                {quote.key === "usdg" || quote.key === "usdc" ? `Buyers pay with ${quote.symbol}; market cap and fees are in dollars.` : quote.key === "gitlawb" ? "Buyers pay with GITLAWB; fees are paid in GITLAWB, or burned." : quote.key === "stock" ? (CHAIN_COPY[chain].stock?.pays ?? "") : "Buyers pay with ETH."}
               </span>
               {cfg.quotes.some((q) => q.key === "gitlawb") && quote.key !== "gitlawb" ? (
                 <button type="button" onClick={() => { setQuoteKey("gitlawb"); setMcapPick(null); setCustomMcap(""); }} className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink" title="Pair with GITLAWB and your token carries the GITLAWB badge everywhere on the site">
@@ -478,7 +503,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 {quote.usd ? <span className="font-mono text-xs opacity-80">{fmtUsd(quote.usd)}</span> : <span className="font-mono text-xs opacity-60">price unavailable</span>}
               </span>
               <p className={helper}>
-                Your token carries the <GitlawbBadge /> badge on the launch list, trending, the activity feed, its page and its share card. GITLAWB is Gitlawb&apos;s token{chain === "robinhood" ? ", bridged 1:1 from Base to Robinhood Chain over LayerZero" : " on Base"}: an ordinary ERC-20, no transfer restrictions, no issuer switch. Name no beneficiary and every trading fee burns GITLAWB. Price from the Uniswap v4 WETH/GITLAWB pool on Base.{" "}
+                Your token carries the <GitlawbBadge /> badge on the launch list, trending, the activity feed, its page and its share card. GITLAWB is Gitlawb&apos;s token{CHAIN_COPY[chain].gitlawbOrigin}: an ordinary ERC-20, no transfer restrictions, no issuer switch. Name no beneficiary and every trading fee burns GITLAWB. Price from the Uniswap v4 WETH/GITLAWB pool on Base.{" "}
                 <a href={GITLAWB_SITE} target="_blank" rel="noreferrer" className="underline decoration-line underline-offset-2 hover:text-ink">gitlawb.com ↗</a>
               </p>
             </div>
@@ -493,7 +518,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       <img src={stock.logo} alt="" width={22} height={22} className={`${stock.logo.startsWith("data:") ? "rounded-md" : "rounded-full"} bg-card`} referrerPolicy="no-referrer" />
                     ) : null}
                     {stock.symbol}
-                    <span className="font-normal text-xs opacity-80">{chain === "base" ? "Coinbase stock" : "Robinhood stock"}</span>
+                    <span className="font-normal text-xs opacity-80">{CHAIN_COPY[chain].stock?.badge}</span>
                     <span className="font-normal text-xs opacity-80">{stock.name}</span>
                     {stock.usd ? <span className="font-mono text-xs opacity-80">{fmtUsd(stock.usd)}</span> : null}
                     <button
@@ -550,10 +575,10 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       </button>
                     </li>
                   ))}
-                  {stockHits.length === 0 ? <li className="text-xs text-muted">{chain === "base" ? "No match. 13 Coinbase tokenized stocks are available on Base: NVDAc, AAPLc, TSLAc, METAc, GOOGLc, AMZNc, MSFTc, MSTRc, COINc, CRCLc, INTCc, SNDKc, SPCXc." : "No match. 194 Robinhood Stock Tokens are available, e.g. AAPL, TSLA, NVDA, SPY."}</li> : null}
+                  {stockHits.length === 0 ? <li className="text-xs text-muted">{CHAIN_COPY[chain].stock?.empty}</li> : null}
                 </ul>
               ) : null}
-              <p className={helper}>{stockIssuerDisclaimer(chain)}</p>
+              <p className={helper}>{CHAIN_COPY[chain].stock?.issuer}</p>
             </div>
           ) : null}
         </section>
@@ -768,9 +793,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
               <span className="font-mono font-bold text-ink tnum">{cap(buyPreview.fdvAfter).main}</span><span className="font-mono text-muted tnum"> · {cap(buyPreview.fdvAfter).detail}</span>. Includes price impact and the pool fee; the exact amount is quoted on-chain right before the buy.
             </p>
           ) : suggestion.reason === "insufficient" ? (
-            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet holds only gas. The launch stays free; you can buy on the token page later.</p>
+            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet {sharedGas ? `does not hold enough ${quote.symbol} for the buy plus its gas` : "holds only gas"}. The launch stays free; you can buy on the token page later.</p>
           ) : suggestion.reason === "no-gas" ? (
-            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet has no ETH left for the buy&apos;s gas. The launch stays free; you can buy on the token page later.</p>
+            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet has no {NATIVE_SYMBOL} left for the buy&apos;s gas. The launch stays free; you can buy on the token page later.</p>
           ) : suggestion.reason === "unknown-balance" ? (
             <p className={helper}>Could not read your balance, so nothing is suggested. The launch stays free; you can still type an amount.</p>
           ) : suggestion.reason === "declined" && !typedBuy ? (

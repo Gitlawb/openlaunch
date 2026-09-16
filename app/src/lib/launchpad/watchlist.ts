@@ -1,9 +1,11 @@
+import { isChainKey, type ChainKey } from "../chainKeys.ts";
+
 /** Browser-local preferences only. No wallet, trading, or server-side identity. */
 export const WATCHLIST_STORAGE_KEY = "openlaunch:watchlist:v1";
 export const WATCHLIST_LIMIT = 50;
 const CLOCK_SKEW_MS = 5 * 60 * 1_000;
 
-export type WatchlistIdentity = { chain: "base" | "robinhood"; token: string; name: string; symbol: string };
+export type WatchlistIdentity = { chain: ChainKey; token: string; name: string; symbol: string };
 export type WatchlistEntry = WatchlistIdentity & { addedAt: number; seenAt: number | null; holders: number | null };
 export type WatchlistSeen = Pick<WatchlistEntry, "chain" | "token" | "seenAt" | "holders">;
 export type WatchlistSnapshot = { entries: WatchlistEntry[]; savedKeys: string[]; ready: boolean; storageError: boolean };
@@ -20,7 +22,7 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 function identity(value: unknown): WatchlistIdentity | null {
-  if (!record(value) || (value.chain !== "base" && value.chain !== "robinhood") ||
+  if (!record(value) || !isChainKey(value.chain) ||
     typeof value.token !== "string" || !/^0x[\da-f]{40}$/i.test(value.token) ||
     typeof value.name !== "string" || !value.name.trim() ||
     typeof value.symbol !== "string" || !value.symbol.trim()) return null;
@@ -84,7 +86,7 @@ export function toggleWatchlistEntry(entries: WatchlistEntry[], value: Watchlist
 export function markWatchlistSeen(entries: WatchlistEntry[], observations: readonly WatchlistSeen[], now = Date.now()): WatchlistEntry[] {
   const updates = new Map<string, WatchlistSeen>();
   for (const observation of observations) {
-    if (!record(observation) || (observation.chain !== "base" && observation.chain !== "robinhood") ||
+    if (!record(observation) || !isChainKey(observation.chain) ||
       typeof observation.token !== "string" || !/^0x[\da-f]{40}$/i.test(observation.token) ||
       !validTime(observation.seenAt, now) || !validHolders(observation.holders)) continue;
     const key = watchlistKey(observation);

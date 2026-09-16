@@ -1,6 +1,6 @@
 # openlaunch.lol — app
 
-**Launch a token. Free. Open source. On Base or Robinhood Chain.**
+**Launch a token. Free. Open source. On Base, Robinhood Chain or Arc.**
 
 The site for the [openlaunch](../README.md) launchpad. One transaction deploys a fixed-supply ERC-20,
 opens a Uniswap v4 pool and locks 100% of the supply as liquidity in an ownerless locker — forever.

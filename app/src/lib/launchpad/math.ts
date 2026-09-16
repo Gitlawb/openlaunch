@@ -59,10 +59,14 @@ export function fdvForStartTick(tick: number, quoteDecimals = 18, supplyWei: big
 }
 
 /** Whole-unit amount from a raw amount with `decimals`. */
-/** USD per quote unit: fixed (stables) or live (stocks) via `usd`; ETH only for the native address; anything else is unknown → null. */
-export function quoteUsdOf(q: { address: string; usd: number | null }, ethUsd: number | null): number | null {
+/**
+ * USD per quote unit: `usd` when the quote carries one (stables, a native stable such as USDC on Arc, live-priced
+ * stocks and GITLAWB), the live ETH price for the ETH quote, and unknown → null for anything else. The quote must come
+ * from quoteInfo(chain, …) / the chain's config: address(0) alone says nothing about what a chain's native asset is.
+ */
+export function quoteUsdOf(q: { key: string; usd: number | null }, ethUsd: number | null): number | null {
   if (q.usd !== null && q.usd !== undefined) return q.usd;
-  return q.address.toLowerCase() === "0x0000000000000000000000000000000000000000" ? ethUsd : null;
+  return q.key === "eth" ? ethUsd : null;
 }
 
 export function units(raw: bigint | string, decimals: number): number {
@@ -166,14 +170,25 @@ export function pipsToPct(pips: number): string {
 const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
 
 /**
+ * The smallest non-zero amount fmtQuoteUnits can show for a quote: half of its last displayed digit
+ * (2 decimals for stables, 8 for everything else). Below it a real trade used to print as a bare "0".
+ */
+export function quoteDisplayFloor(decimals: number): number {
+  return decimals <= 6 ? 0.005 : 5e-9;
+}
+
+/**
  * Whole quote units for display. ≤6-dec quotes (stables) show 2 decimals; 18-dec quotes show ETH-style
  * precision below 100K units and compact above (GITLAWB: millions per dollar → "1.2M", never
- * "1200000.0000"; 999,999 → "1M", not "1000.00K").
+ * "1200000.0000"; 999,999 → "1M", not "1000.00K"). A non-zero amount under the display floor reads
+ * "<0.01" / "<0.00000001", never "0": only an exact zero prints "0".
  */
 export function fmtQuoteUnits(v: number, decimals: number): string {
   if (!Number.isFinite(v)) return "—";
-  if (decimals <= 6) return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2)).replace(/\.00$/, "");
-  return Math.round(Math.abs(v)) >= 100_000 ? COMPACT.format(v) : fmtEth(v);
+  const abs = Math.abs(v);
+  if (abs > 0 && abs < quoteDisplayFloor(decimals)) return decimals <= 6 ? "<0.01" : "<0.00000001";
+  if (decimals <= 6) return (abs >= 100 ? v.toFixed(0) : v.toFixed(2)).replace(/\.00$/, "");
+  return Math.round(abs) >= 100_000 ? COMPACT.format(v) : fmtEth(v);
 }
 
 /**

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { b20RpcUrl, rpcUrl } from "@/lib/chain";
 import { responseHasB20Error } from "@/lib/launchpad/baseStocks";
-import { CHAINS, isChainKey } from "@/lib/chainPublic";
+import { CHAINS, DEFAULT_CHAIN, isChainKey } from "@/lib/chainPublic";
+import { upstreamStatus } from "@/lib/rpc-proxy";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +62,9 @@ function safeJson(text: string): unknown {
 }
 
 export async function POST(req: Request) {
-  const c = new URL(req.url).searchParams.get("chain") ?? "base";
+  const c = new URL(req.url).searchParams.get("chain") ?? DEFAULT_CHAIN;
+  // every chain: the same read allowlist and per-IP bucket, its own upstream (the keyed *_RPC_URL, else the chain's
+  // official public node) so browsers never hit a public RPC directly and the API key stays server-side
   if (!isChainKey(c)) return NextResponse.json({ error: "bad chain" }, { status: 400 });
   const upstream = rpcUrl(c) ?? CHAINS[c].rpcUrls.default.http[0];
   if (!upstream) return NextResponse.json({ error: "rpc unconfigured" }, { status: 503 });
@@ -73,15 +76,23 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "bad json" }, { status: 400 });
   }
-  const list = Array.isArray(body) ? body : [body];
+  const batch = Array.isArray(body);
+  const list: Req[] = Array.isArray(body) ? body : [body];
+  if (list.length === 0) return NextResponse.json({ error: "empty batch" }, { status: 400 });
   if (list.length > 20) return NextResponse.json({ error: "batch too large" }, { status: 400 });
-  for (const r of list) {
-    if (typeof r?.method !== "string" || !ALLOWED.has(r.method)) {
-      return NextResponse.json({ jsonrpc: "2.0", id: r?.id ?? null, error: { code: -32601, message: `method not allowed: ${String(r?.method)}` } }, { status: 403 });
-    }
-  }
+  // A method outside the allowlist gets a JSON-RPC "method not found" in its
+  // slot, never an HTTP error for the whole batch: viem then falls back (it
+  // probes eth_fillTransaction for fee estimates) and the other reads succeed.
+  const denied = new Map<number, unknown>();
+  const forward: Req[] = [];
+  list.forEach((r, i) => {
+    if (typeof r?.method !== "string" || !ALLOWED.has(r.method)) denied.set(i, { jsonrpc: "2.0", id: r?.id ?? null, error: { code: -32601, message: `method not allowed: ${String(r?.method)}` } });
+    else forward.push(r);
+  });
+  const reply = (items: unknown[]) => NextResponse.json(batch ? items : items[0], { headers: { "cache-control": "no-store" } });
+  if (forward.length === 0) return reply(list.map((_, i) => denied.get(i)));
   try {
-    const payload = JSON.stringify(body);
+    const payload = JSON.stringify(batch ? forward : forward[0]);
     const res = await fetch(upstream, { method: "POST", headers: { "content-type": "application/json" }, body: payload, signal: AbortSignal.timeout(15_000) });
     let text = await res.text();
     let status = res.status;
@@ -94,8 +105,22 @@ export async function POST(req: Request) {
         status = alt.status;
       }
     }
-    return new NextResponse(text, { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "upstream failed" }, { status: 502 });
+    // Rate limiting and malformed bodies become 429/502 so viem retries with backoff
+    // instead of surfacing "unknown RPC error" or throwing inside its batch scheduler.
+    status = upstreamStatus(text, batch, forward.length, status, forward.map((r) => r.id));
+    if (status !== 200) {
+      // viem accepts a JSON-RPC error envelope even on HTTP 429/502. Returning
+      // an upstream single error object for a batch would still crash its
+      // scheduler. A non-RPC body forces the transport's HTTP retry path.
+      return NextResponse.json({ error: status === 429 ? "The network is busy. Try again in a moment." : "The network returned an unavailable or invalid RPC response. Try again." }, {
+        status, headers: { "cache-control": "no-store", ...(status === 429 ? { "retry-after": "1" } : {}) },
+      });
+    }
+    if (denied.size === 0) return new NextResponse(text, { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    const upstreamItems = JSON.parse(text) as unknown[]; // upstreamStatus verified an array of forward.length
+    let next = 0;
+    return reply(list.map((_, i) => denied.get(i) ?? upstreamItems[next++]));
+  } catch {
+    return NextResponse.json({ error: "The network RPC is temporarily unavailable. Try again." }, { status: 502, headers: { "cache-control": "no-store" } });
   }
 }

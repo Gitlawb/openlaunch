@@ -21,7 +21,7 @@ npm run migrate && npm run dev
 cd ../contracts && forge test --match-path test/LaunchFactory.t.sol
 ```
 
-`app/README.md` covers running against anvil forks of both chains. `app/LAUNCH.md` is the production runbook.
+`app/README.md` covers running against anvil forks of the chains. `app/LAUNCH.md` is the production runbook.
 
 ## Before you open a pull request
 

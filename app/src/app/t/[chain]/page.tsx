@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { isAddress } from "viem";
-import { isChainKey } from "@/lib/chainPublic";
+import { DEFAULT_CHAIN, isChainKey } from "@/lib/chainPublic";
 import { findLaunchChain } from "@/lib/launchpad/queries";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,6 @@ export default async function TokenOrChainPage({ params }: { params: Promise<{ c
   const { chain } = await params;
   if (isChainKey(chain)) redirect(`/?chain=${chain}`);
   if (!isAddress(chain)) notFound();
-  const found = (await findLaunchChain(chain)) ?? "base";
+  const found = (await findLaunchChain(chain)) ?? DEFAULT_CHAIN;
   redirect(`/t/${found}/${chain.toLowerCase()}`);
 }

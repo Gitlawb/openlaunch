@@ -79,7 +79,7 @@ export function buildCsp(nonce: string, { dev = false, connectSrc = [] }: CspOpt
 /** Origins the browser must reach besides the page itself: the configured site URL and dev RPC overrides. */
 export function extraConnectOrigins(env: Record<string, string | undefined>): string[] {
   const out = new Set<string>();
-  for (const key of ["NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_RPC_URL_BASE", "NEXT_PUBLIC_RPC_URL_ROBINHOOD"]) {
+  for (const key of ["NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_RPC_URL_BASE", "NEXT_PUBLIC_RPC_URL_ROBINHOOD", "NEXT_PUBLIC_RPC_URL_ARC"]) {
     const value = env[key]?.trim();
     if (!value) continue;
     try {

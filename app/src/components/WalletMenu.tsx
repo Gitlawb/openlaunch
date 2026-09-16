@@ -1,12 +1,34 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { ArrowDownUp, ArrowRight, ArrowUpRight, Check, ChevronDown, Copy, LayoutDashboard, LogOut, X } from "lucide-react";
-import { CHAIN_KEYS, CHAIN_LABELS, CHAIN_SHORT, chainKeyOf, explorerAddress, explorerName, shortAddr, type ChainKey } from "@/lib/chainPublic";
+import { CHAIN_LABELS, CHAIN_SHORT, chainKeyOf, explorerAddress, explorerName, shortAddr, type ChainKey } from "@/lib/chainPublic";
+import { BRIDGE_CHAINS, isBridgeChainId } from "@/lib/bridge/types";
+import { VISIBLE_CHAINS } from "@/lib/launchpad/config";
 import WalletAvatar from "./WalletAvatar";
 import styles from "./WalletMenu.module.css";
+
+/** Official network marks (app/public/brand). A chain with a dark-mode variant lists both; the CSS swaps them by theme. */
+const NETWORK_LOGOS: Record<ChainKey, { light: string; dark?: string; width: number; height: number }> = {
+  base: { light: "/brand/base.svg", width: 22, height: 22 },
+  robinhood: { light: "/brand/robinhood-black.svg", dark: "/brand/robinhood-white.svg", width: 16, height: 21 },
+  arc: { light: "/brand/arc.svg", width: 21, height: 22 },
+};
+
+function NetworkLogo({ chain }: { chain: ChainKey }) {
+  const logo = NETWORK_LOGOS[chain];
+  return (
+    <span className={styles.networkLogo} aria-hidden>
+      {logo.dark ? <>
+        <Image className={styles.lightLogo} src={logo.light} alt="" width={logo.width} height={logo.height} draggable={false} />
+        <Image className={styles.darkLogo} src={logo.dark} alt="" width={logo.width} height={logo.height} draggable={false} />
+      </> : <Image src={logo.light} alt="" width={logo.width} height={logo.height} draggable={false} />}
+    </span>
+  );
+}
 
 type WalletMenuProps = {
   address: string;
@@ -34,8 +56,12 @@ function AccountMenu({ address, chainId, connectorName, block = false, switching
   const actionLock = useRef(false);
   const popupRef = useRef<HTMLDivElement>(null);
   const key = chainKeyOf(chainId);
+  const bridgeNetwork = isBridgeChainId(chainId) ? BRIDGE_CHAINS[chainId] : null;
+  // a registry chain the site has no contracts on yet (Arc before its factory is set) is bridge-only for now
+  const launchable = key !== null && VISIBLE_CHAINS.includes(key);
   const busy = switching || disconnecting || localBusy !== null;
-  const network = key ? CHAIN_SHORT[key] : "Unsupported network";
+  const network = key ? CHAIN_SHORT[key] : bridgeNetwork?.name ?? "Unsupported network";
+  const explorer = key ? explorerAddress(key, address) : bridgeNetwork ? `${bridgeNetwork.explorer}/address/${address}` : null;
 
   async function copyAddress() {
     try {
@@ -74,11 +100,11 @@ function AccountMenu({ address, chainId, connectorName, block = false, switching
       <Popover.Trigger
         className={`${styles.trigger} ${block ? styles.block : ""}`}
         aria-label={`Wallet ${shortAddr(address)}, ${network}. Open account menu`}
-        data-unsupported={!key || undefined}
+        data-unsupported={(!key && !bridgeNetwork) || undefined}
       >
         <span className={styles.triggerMark}><WalletAvatar address={address} /><span className={styles.connectionDot} /></span>
         <span className={styles.triggerAddress}>{shortAddr(address)}</span>
-        <span className={styles.triggerNetwork}>{key ? CHAIN_SHORT[key] : "Switch"}</span>
+        <span className={styles.triggerNetwork}>{key || bridgeNetwork ? network : "Switch"}</span>
         <ChevronDown size={13} className={styles.chevron} aria-hidden />
       </Popover.Trigger>
       <Popover.Portal>
@@ -112,25 +138,25 @@ function AccountMenu({ address, chainId, connectorName, block = false, switching
                 {copied ? <Check size={15} aria-hidden /> : <Copy size={15} aria-hidden />}
                 {copied ? "Copied" : "Copy address"}
               </button>
-              {key ? (
-                <a className={styles.shortcut} href={explorerAddress(key, address)} target="_blank" rel="noreferrer" aria-label={`View wallet on ${explorerName(key)} (opens in new tab)`}>
+              {explorer ? (
+                <a className={styles.shortcut} href={explorer} target="_blank" rel="noreferrer" aria-label={`View wallet on ${key ? explorerName(key) : `${network} Explorer`} (opens in new tab)`}>
                   <ArrowUpRight size={16} aria-hidden />Explorer
                 </a>
               ) : null}
             </div>
             <div className={styles.networkSection}>
               <div className={styles.sectionLabel}><span>Network</span><ArrowDownUp size={13} aria-hidden /></div>
-              {!key ? <p className={styles.unsupported}>This network isn’t supported. Choose one below.</p> : null}
+              {!key && !bridgeNetwork ? <p className={styles.unsupported}>This network isn’t supported. Choose one below.</p> : null}
               <div className={styles.networks} role="group" aria-label="Wallet network">
-                {CHAIN_KEYS.map((chain) => (
+                {VISIBLE_CHAINS.map((chain) => (
                   <button type="button" key={chain} className={styles.networkButton} aria-pressed={chain === key} disabled={busy} onClick={() => void runAction(chain)}>
-                    <span className={`${styles.networkGlyph} ${chain === "robinhood" ? styles.robinhood : ""}`} aria-hidden>{chain === "base" ? "B" : "R"}</span>
+                    <NetworkLogo chain={chain} />
                     <span>{CHAIN_SHORT[chain]}</span>
                     {localBusy === chain ? <span className={styles.pendingDot} aria-label="Switching" /> : chain === key ? <Check size={14} className={styles.networkCheck} aria-hidden /> : null}
                   </button>
                 ))}
               </div>
-              <p className={styles.networkNote}>{switching || (localBusy && localBusy !== "disconnect") ? "Confirm the network in your wallet…" : key ? `Connected to ${CHAIN_LABELS[key]}` : "A network switch needs wallet approval."}</p>
+              <p className={styles.networkNote}>{switching || (localBusy && localBusy !== "disconnect") ? "Confirm the network in your wallet…" : key && launchable ? `Connected to ${CHAIN_LABELS[key]}` : key || bridgeNetwork ? `Connected to ${network}. Use Bridge to move funds, or choose a launch network above.` : "A network switch needs wallet approval."}</p>
             </div>
             <Link href="/me" className={styles.workspace} onClick={() => { setOpen(false); onNavigate?.(); }}>
               <LayoutDashboard size={17} aria-hidden />

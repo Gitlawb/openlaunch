@@ -3,13 +3,13 @@ import MeDashboard from "@/components/launchpad/MeDashboard";
 import SectionIntro from "@/components/sections/SectionIntro";
 import shell from "@/components/sections/SectionShell.module.css";
 
-export const metadata: Metadata = { title: "Me", description: "Your launches, fees, holdings and trades on Base and Robinhood Chain." };
+export const metadata: Metadata = { title: "Me", description: "Your launches, fees, holdings and trades on Base, Robinhood Chain and Arc." };
 export const dynamic = "force-dynamic";
 
 export default function MePage() {
   return (
     <main className={shell.page}>
-      <SectionIntro eyebrow="Your dashboard" title="A space for your next move." description="Your launches, the fees they earn, and everything you trade. One wallet across Base and Robinhood Chain." />
+      <SectionIntro eyebrow="Your dashboard" title="A space for your next move." description="Your launches, the fees they earn, and everything you trade. One wallet across Base, Robinhood Chain and Arc." />
       <MeDashboard />
     </main>
   );

@@ -296,3 +296,11 @@ CREATE INDEX IF NOT EXISTS bb_launches_bt_idx ON bb_launches (block_time DESC);
 -- ── metadata key (stable URI across the CREATE2 salt search) ────────────────
 ALTER TABLE bb_launch_meta ADD COLUMN IF NOT EXISTS meta_key text;
 CREATE INDEX IF NOT EXISTS bb_launch_meta_key_idx ON bb_launch_meta (launcher, meta_key);
+
+-- ── chain_id has no default (2026-09-14) ───────────────────────────────────
+-- The multi-chain ALTERs above backfilled pre-existing rows as Base (8453); from here every insert
+-- must name its chain, so a row written without one fails loudly instead of being filed under Base.
+ALTER TABLE bb_launches ALTER COLUMN chain_id DROP DEFAULT;
+ALTER TABLE bb_launch_swaps ALTER COLUMN chain_id DROP DEFAULT;
+ALTER TABLE bb_launch_fee_events ALTER COLUMN chain_id DROP DEFAULT;
+ALTER TABLE bb_launch_meta ALTER COLUMN chain_id DROP DEFAULT;

@@ -18,6 +18,9 @@ test("workspace navigation preserves notification controls in both header layout
   const mobile = header.slice(header.indexOf("function Mobile"));
   assert.match(desktop, /<NotificationSettings \/>/);
   assert.match(mobile, /<NotificationSettings block \/>/);
+  assert.match(header, /<BridgeProvider><MotionConfig/);
+  assert.match(desktop, /<BridgeButton \/>/);
+  assert.match(mobile, /<BridgeButton block onOpen=\{\(\) => setOpen\(false\)\} \/>/);
   assert.match(mobile, /<MobileNav\s+visible=\{visible\}\s+docked=\{workspace\}/);
 });
 

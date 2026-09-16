@@ -5,6 +5,7 @@ import { Check, ChevronDown, Layers2 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/vendor/toggle-group";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/vendor/popover";
 import { CHAIN_SHORT, type ChainKey } from "@/lib/chainPublic";
+import { VISIBLE_CHAINS } from "@/lib/launchpad/config";
 
 /** Compact, keyboard-accessible network selection shared by browsing surfaces. */
 export default function ChainSelector({ value, onChange, label = "Chain" }: { value: ChainKey | null; onChange: (chain: ChainKey | null) => void; label?: string }) {
@@ -16,7 +17,7 @@ export default function ChainSelector({ value, onChange, label = "Chain" }: { va
     <PopoverContent className="w-56 p-2">
       <PopoverTitle className="px-3 pb-2 pt-2 text-xs font-semibold text-muted">{label}</PopoverTitle>
       <ToggleGroup aria-label={label} orientation="vertical" value={[value ?? "all"]} onValueChange={(values) => { if (!values[0]) return; onChange(values[0] === "all" ? null : values[0] as ChainKey); setOpen(false); }} className="flex w-full flex-col items-stretch gap-1">
-        {([null, "base", "robinhood"] as const).map((chain) => <ToggleGroupItem key={chain ?? "all"} value={chain ?? "all"} className="min-h-11 w-full justify-between px-3 text-sm">
+        {[null, ...VISIBLE_CHAINS].map((chain) => <ToggleGroupItem key={chain ?? "all"} value={chain ?? "all"} className="min-h-11 w-full justify-between px-3 text-sm">
           {chain ? CHAIN_SHORT[chain] : "All chains"}{chain === value ? <Check size={14} aria-hidden="true" /> : null}
         </ToggleGroupItem>)}
       </ToggleGroup>

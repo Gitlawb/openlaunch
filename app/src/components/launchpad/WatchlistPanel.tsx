@@ -73,7 +73,7 @@ export default function WatchlistPanel({ onBrowse }: { onBrowse: () => void }) {
           <h2 ref={heading} tabIndex={-1} id="watchlist-heading" className="text-2xl font-semibold tracking-tight text-ink">Your watchlist.</h2>
           <span aria-label={ready ? `${entries.length} of 50 tokens saved` : "Loading saved tokens"} className="shrink-0 font-mono text-xs text-muted tnum">{ready ? <><span className="text-ink">{entries.length}</span><span aria-hidden="true"> / 50</span></> : "…"}</span>
         </div>
-        <p className="mt-2 text-[13px] leading-relaxed text-muted">Your picks. Both chains. No wallet needed.</p>
+        <p className="mt-2 text-[13px] leading-relaxed text-muted">Your picks. Across chains. No wallet needed.</p>
       </header>
       {storageError ? <p role="alert" className="border-t border-line px-5 py-3 text-xs text-warm-ink">Some changes could not be saved. If another tab filled your watchlist, remove a token to make room. Unsaved changes last for this session.</p> : null}
       {loading ? <div role="status" className="space-y-4 border-t border-line p-6"><span className="sr-only">Loading your watchlist</span>{[0, 1, 2].map((key) => <div key={key} className="flex h-20 items-center gap-4 border-b border-line"><span className="h-10 w-10 rounded-xl bg-skeleton" /><span className="h-4 w-36 rounded bg-skeleton" /><span className="ml-auto h-4 w-20 rounded bg-skeleton" /></div>)}</div> : entries.length === 0 ? (

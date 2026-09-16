@@ -186,7 +186,7 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
         <p className={styles.asideEyebrow}>A little context goes a long way</p>
         <p>Every post belongs to a token. The full thread, the market and the contracts stay together.</p>
         <ol className={styles.steps}>
-          <li><span>01</span><div><h3>Find your token</h3><p>Browse launches on either chain.</p></div></li>
+          <li><span>01</span><div><h3>Find your token</h3><p>Browse launches on any chain.</p></div></li>
           <li><span>02</span><div><h3>Open Conversation</h3><p>Read the thread or reply to a post.</p></div></li>
           <li><span>03</span><div><h3>Sign your words</h3><p>A wallet signature, not a transaction.</p></div></li>
         </ol>

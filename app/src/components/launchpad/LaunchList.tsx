@@ -12,7 +12,7 @@ import ChainSelector from "./ChainSelector";
 import { btn } from "@/components/ui";
 import type { LaunchRow as L, LaunchSort, VolumeWindow } from "@/lib/launchpad/queries";
 import { CHAIN_SHORT, type ChainKey } from "@/lib/chainPublic";
-import { FILTERS, isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit, type LaunchFilter } from "@/lib/launchpad/search";
+import { FILTERS, filterOnChain, isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit, type LaunchFilter } from "@/lib/launchpad/search";
 import { launchKey, mergeLaunches, refreshInPlace } from "@/lib/launchpad/list-state";
 import { liveChip, liveTier } from "@/lib/launchpad/ranking";
 import { PAGE_SIZE } from "@/lib/launchpad/paging";
@@ -225,14 +225,14 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
             <input id="launch-search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }} placeholder="Search token, symbol or address" className={styles.searchInput} autoComplete="off" spellCheck={false} />
             {q ? <button type="button" onClick={() => { setQ(""); document.getElementById("launch-search")?.focus(); }} aria-label="Clear search" className={styles.clearSearch}><X size={15} aria-hidden="true" /></button> : null}
           </div>
-          <ChainSelector value={chain} onChange={(c) => { const keep = !filter || FILTERS.some((f) => f.key === filter && (!f.chain || !c || f.chain === c)); pick(sort, window_, c, keep ? filter : null); }} />
+          <ChainSelector value={chain} onChange={(c) => { const keep = !filter || FILTERS.some((f) => f.key === filter && filterOnChain(f, c)); pick(sort, window_, c, keep ? filter : null); }} />
           <Popover>
             <PopoverTrigger ref={filtersTriggerRef} className={`${styles.filterButton} ui-pressable ${filter ? styles.filterActive : ""}`}><SlidersHorizontal size={14} aria-hidden="true" />Filters{filter ? <span className={styles.filterCount}>1</span> : null}</PopoverTrigger>
             <PopoverContent>
               <div className="flex items-center justify-between gap-3 px-2"><PopoverTitle className="text-sm font-semibold">Filter launches</PopoverTitle><PopoverClose aria-label="Close filters" className="grid h-11 w-11 place-items-center rounded-lg text-muted hover:bg-line hover:text-ink"><X size={15} aria-hidden="true" /></PopoverClose></div>
               <PopoverDescription className="px-2 pb-3 text-xs text-muted">Choose a filter. Select it again to clear.</PopoverDescription>
               <ToggleGroup aria-label="Quick filter" orientation="vertical" value={filter ? [filter] : []} onValueChange={(values) => pick(sort, window_, chain, (values[0] as LaunchFilter | undefined) ?? null)} className="flex w-full flex-col items-stretch gap-1">
-                {FILTERS.filter((f) => !f.chain || !chain || f.chain === chain).map((f) => <ToggleGroupItem key={f.key} value={f.key} title={f.title} className="min-h-11 w-full justify-between px-3 text-sm">{f.label}{filter === f.key ? <Check size={14} aria-hidden="true" /> : null}</ToggleGroupItem>)}
+                {FILTERS.filter((f) => filterOnChain(f, chain)).map((f) => <ToggleGroupItem key={f.key} value={f.key} title={f.title} className="min-h-11 w-full justify-between px-3 text-sm">{f.label}{filter === f.key ? <Check size={14} aria-hidden="true" /> : null}</ToggleGroupItem>)}
               </ToggleGroup>
             </PopoverContent>
           </Popover>
@@ -247,7 +247,7 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
           {showWindow ? <ToggleGroup aria-label="Volume window" value={[window_]} onValueChange={(values) => { if (values[0]) pick(sort, values[0] as VolumeWindow); }}>
             {WINDOWS.map((w) => <ToggleGroupItem key={w} value={w} className="min-h-9 px-2.5 font-mono tnum">{w === "all" ? "All time" : w}</ToggleGroupItem>)}
           </ToggleGroup> : null}
-          <div role="status" className={styles.status}><span className={styles.countText}>{updating || searching ? <><Spinner size={11} />{searching ? "Searching…" : "Updating…"}</> : nq ? <><strong>{shown.length}</strong> matches</> : <><strong>{shown.length}</strong> of <span className="tnum">{live.totals.launches}</span> · {chain ? CHAIN_SHORT[chain] : "both chains"}</>}</span>{filter ? <button type="button" onClick={() => { pick(sort, window_, chain, null); filtersTriggerRef.current?.focus(); }} className={styles.activeFilter} aria-label="Clear active filter">{FILTERS.find((f) => f.key === filter)?.label}<X size={12} aria-hidden="true" /></button> : null}<span className={styles.updateState}><span className={styles.updateDot} aria-hidden="true" />{holding ? "Order paused" : "Live · 5s"}</span></div>
+          <div role="status" className={styles.status}><span className={styles.countText}>{updating || searching ? <><Spinner size={11} />{searching ? "Searching…" : "Updating…"}</> : nq ? <><strong>{shown.length}</strong> matches</> : <><strong>{shown.length}</strong> of <span className="tnum">{live.totals.launches}</span> · {chain ? CHAIN_SHORT[chain] : "all chains"}</>}</span>{filter ? <button type="button" onClick={() => { pick(sort, window_, chain, null); filtersTriggerRef.current?.focus(); }} className={styles.activeFilter} aria-label="Clear active filter">{FILTERS.find((f) => f.key === filter)?.label}<X size={12} aria-hidden="true" /></button> : null}<span className={styles.updateState}><span className={styles.updateDot} aria-hidden="true" />{holding ? "Order paused" : "Live · 5s"}</span></div>
         </div>
       </div>
       <p className="sr-only">{sort === "live" ? "Tokens with buyers first. Every launch stays in New." : "Every token. Open from the start."}</p>

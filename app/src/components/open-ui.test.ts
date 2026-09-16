@@ -19,7 +19,7 @@ test("the compact chain selector retains keyboard selection and automatic close"
   assert.match(selector, /orientation="vertical"/);
   assert.match(selector, /onChange\(values\[0\] === "all" \? null/);
   assert.match(selector, /setOpen\(false\)/);
-  assert.match(selector, /\[null, "base", "robinhood"\]/);
+  assert.match(selector, /\[null, \.\.\.VISIBLE_CHAINS\]/);
   assert.match(source("./vendor/popover.tsx"), /@base-ui\/react\/popover/);
   assert.match(source("./vendor/popover.tsx"), /collisionPadding=\{12\}/);
   assert.match(source("./vendor/popover.tsx"), /motion-reduce:transition-none/);

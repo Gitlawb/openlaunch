@@ -5,7 +5,7 @@ import { ArrowDownLeft, ArrowUpRight, Check, Coins, Info, Plus, X } from "lucide
 import { useCallback, useEffect, useState } from "react";
 import TokenAvatar from "./TokenAvatar";
 import { fmtQuote } from "@/lib/launchpad/math";
-import { CHAIN_SHORT } from "@/lib/chainPublic";
+import { CHAIN_SHORT, DEFAULT_CHAIN } from "@/lib/chainPublic";
 import { shortAddr } from "@/lib/chainPublic";
 import { createToastFeedTracker, createToastQueue, dismissToast, enqueueToast, expireToast, pauseToast, removeActivityToasts, toastDelay, TOAST_TTL_MS, type ActiveToast, type QueuedToast, type ToastDetail } from "@/lib/launchpad/toast-queue";
 import { getActivityNotifications, subscribeActivityNotifications } from "@/lib/launchpad/activity-preference";
@@ -157,7 +157,7 @@ function ToastCard({ t, pending = 0, onClose }: { t: ActiveToast; pending?: numb
   return (
     <div className={`bb-toast-card ${t.leaving ? "bb-toast-out" : "bb-toast-in"}`} data-kind={t.kind} style={{ animationPlayState: t.leaving && t.startedAt === null ? "paused" : "running" }}>
       {t.token ? (
-        <Link href={`/t/${t.chain ?? "base"}/${t.token}`} className="bb-toast-content">
+        <Link href={`/t/${t.chain ?? DEFAULT_CHAIN}/${t.token}`} className="bb-toast-content">
           {content}
         </Link>
       ) : <div className="bb-toast-content">{content}</div>}
