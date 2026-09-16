@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fdvForStartTick, fmtCompact, fmtEth, fmtQuoteUnits, fmtPrice, fmtUnitsExact, fmtUsd, initialBuyPreview, minOut, poolIdOf, quoteUsdOf, startTickForFdv, sqrtPriceToTokensPerQuote, tickToTokensPerQuote } from "./math.ts";
+import { fdvForStartTick, fmtCompact, fmtEth, fmtQuote, fmtQuoteUnits, fmtPrice, fmtUnitsExact, fmtUsd, initialBuyPreview, minOut, poolIdOf, quoteDisplayFloor, quoteUsdOf, startTickForFdv, sqrtPriceToTokensPerQuote, tickToTokensPerQuote } from "./math.ts";
 import { encodeV4ExactInSingle } from "./swap.ts";
 
 test("startTickForFdv: 10 ETH FDV on 1B supply ≈ tick 184200 (1 ETH = 100M tokens)", () => {
@@ -124,6 +124,26 @@ test("initialBuyPreview: the LP fee reduces output; quote decimals are honoured"
   const u = initialBuyPreview({ startTick: t6, amountInRaw: 10n * 10n ** 6n, quoteDecimals: 6 });
   assert.ok(u.pctOfSupply > 0.9 && u.pctOfSupply < 1.0, `got ${u.pctOfSupply}`);
   assert.ok(u.fdvAfter > 1_000 && u.fdvAfter < 1_100, `fdv after ${u.fdvAfter}`);
+});
+
+test("fmtQuoteUnits: a real amount never prints as a bare 0", () => {
+  assert.equal(quoteDisplayFloor(6), 0.005);
+  assert.equal(quoteDisplayFloor(18), 5e-9);
+  assert.equal(quoteDisplayFloor(8), 5e-9);
+  // USDG dust: 4,999 raw units used to read "0 USDG" in the tape and the toasts
+  assert.equal(fmtQuote("4999", 6, "USDG"), "<0.01 USDG");
+  assert.equal(fmtQuote("1", 6, "USDG"), "<0.01 USDG");
+  assert.equal(fmtQuote("5000", 6, "USDG"), "0.01 USDG");
+  // 18-dec quotes: under 5 gwei
+  assert.equal(fmtQuote("4999999999", 18, "ETH"), "<0.00000001 ETH");
+  assert.equal(fmtQuote("1", 18, "GITLAWB"), "<0.00000001 GITLAWB");
+  assert.equal(fmtQuote("5000000000", 18, "ETH"), "0.00000001 ETH");
+  assert.equal(fmtQuote("1", 8, "MSTRc"), "0.00000001 MSTRc");
+  assert.equal(fmtQuoteUnits(-0.001, 6), "<0.01", "sign-agnostic: callers pass magnitudes");
+  // only an exact zero is "0": empty volume stats keep reading 0
+  assert.equal(fmtQuote("0", 6, "USDG"), "0 USDG");
+  assert.equal(fmtQuote("0", 18, "ETH"), "0 ETH");
+  assert.equal(fmtQuoteUnits(0, 18), "0");
 });
 
 test("fmtQuoteUnits: stables 2dp, 18-dec ETH-style below 100K, compact above with suffix promotion", () => {

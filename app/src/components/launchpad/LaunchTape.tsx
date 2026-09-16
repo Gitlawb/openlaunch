@@ -76,5 +76,5 @@ export default function LaunchTape({ initial }: { initial: FeedItem[] }) {
 }
 
 function key(item: FeedItem): string {
-  return `${item.chain}:${item.kind}:${item.tx_hash}:${item.token}${item.kind === "swap" ? `:${item.quote_wei}` : ""}`;
+  return `${item.chain}:${item.kind}:${item.tx_hash}:${item.token}${item.kind === "swap" ? `:${item.log_index}` : ""}`;
 }

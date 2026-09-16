@@ -166,14 +166,25 @@ export function pipsToPct(pips: number): string {
 const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
 
 /**
+ * The smallest non-zero amount fmtQuoteUnits can show for a quote: half of its last displayed digit
+ * (2 decimals for stables, 8 for everything else). Below it a real trade used to print as a bare "0".
+ */
+export function quoteDisplayFloor(decimals: number): number {
+  return decimals <= 6 ? 0.005 : 5e-9;
+}
+
+/**
  * Whole quote units for display. ≤6-dec quotes (stables) show 2 decimals; 18-dec quotes show ETH-style
  * precision below 100K units and compact above (GITLAWB: millions per dollar → "1.2M", never
- * "1200000.0000"; 999,999 → "1M", not "1000.00K").
+ * "1200000.0000"; 999,999 → "1M", not "1000.00K"). A non-zero amount under the display floor reads
+ * "<0.01" / "<0.00000001", never "0": only an exact zero prints "0".
  */
 export function fmtQuoteUnits(v: number, decimals: number): string {
   if (!Number.isFinite(v)) return "—";
-  if (decimals <= 6) return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2)).replace(/\.00$/, "");
-  return Math.round(Math.abs(v)) >= 100_000 ? COMPACT.format(v) : fmtEth(v);
+  const abs = Math.abs(v);
+  if (abs > 0 && abs < quoteDisplayFloor(decimals)) return decimals <= 6 ? "<0.01" : "<0.00000001";
+  if (decimals <= 6) return (abs >= 100 ? v.toFixed(0) : v.toFixed(2)).replace(/\.00$/, "");
+  return Math.round(abs) >= 100_000 ? COMPACT.format(v) : fmtEth(v);
 }
 
 /**

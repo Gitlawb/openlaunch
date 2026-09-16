@@ -9,6 +9,7 @@ import { canonicalImageUrl } from "./images";
 import { GRACE_HOURS, LIVE_WINDOW_HOURS, rankTrending, type LiveTier } from "./ranking";
 import { SNIPER_BLOCKS } from "./holders";
 import { imagePublicBase } from "./imageStore";
+import { collectNonDust } from "./feed-dust";
 import { fdvQuote, quotePerToken, tickToTokensPerQuote, units } from "./math";
 import type { RawCandle } from "./candles";
 import { normalizeQuery, isAddressQuery, escapeLike, compareSearchHit, type LaunchFilter } from "./search";
@@ -324,31 +325,50 @@ export async function getSwaps(chain: ChainKey, token: string, quoteDecimals: nu
 /** Home tape: launches + trades across chains, newest first. */
 export type FeedItem =
   | { kind: "launch"; chain: ChainKey; at: string; tx_hash: string; token: string; name: string; symbol: string; launcher: string; lp_fee: number; quote_key: Quote["key"]; image_url: string | null }
-  | { kind: "swap"; chain: ChainKey; at: string; tx_hash: string; token: string; name: string; symbol: string; trader: string | null; is_buy: boolean; is_dev: boolean; quote_wei: string; quote_key: Quote["key"]; quote_symbol: string; quote_decimals: number; usd: number | null; image_url: string | null };
+  | { kind: "swap"; chain: ChainKey; at: string; tx_hash: string; log_index: number; token: string; name: string; symbol: string; trader: string | null; is_buy: boolean; is_dev: boolean; quote_wei: string; quote_key: Quote["key"]; quote_symbol: string; quote_decimals: number; usd: number | null; image_url: string | null };
+
+export type FeedSwap = Extract<FeedItem, { kind: "swap" }>;
 
 export async function getLaunchFeed(limit = 24, ethUsd: number | null = null): Promise<FeedItem[]> {
   const db = maybeDb();
   if (!db) return [];
   await withStocks();
   const n = Math.min(100, limit);
-  const rows = await db<{ kind: "launch" | "swap"; chain_id: number; at: string; tx_hash: string; token: string; name: string; symbol: string; quote: string; who: string | null; lp_fee: number | null; is_buy: boolean | null; quote_wei: string | null; image_url: string | null; is_dev: boolean | null }[]>`
-    SELECT * FROM (
-      (SELECT 'launch'::text AS kind, l.chain_id, l.block_time AS at, l.tx_hash, l.token, l.name, l.symbol, l.quote, l.launcher AS who, l.lp_fee, NULL::boolean AS is_buy, NULL::numeric AS quote_wei, m.image_url, NULL::boolean AS is_dev
-        FROM bb_launches l LEFT JOIN bb_launch_meta m ON m.chain_id = l.chain_id AND m.token = l.token
-        ORDER BY l.block_time DESC LIMIT ${n})
-      UNION ALL
-      (SELECT 'swap', s.chain_id, s.block_time, s.tx_hash, s.token, l.name, l.symbol, l.quote, s.trader, NULL, s.is_buy, abs(s.amount0), m.image_url, (s.trader = l.launcher) AS is_dev
-        FROM (SELECT * FROM bb_launch_swaps ORDER BY block_time DESC LIMIT ${n}) s
-        JOIN bb_launches l ON l.chain_id = s.chain_id AND l.token = s.token LEFT JOIN bb_launch_meta m ON m.chain_id = l.chain_id AND m.token = l.token)
-    ) x ORDER BY at DESC LIMIT ${n}`; // each arm pre-limited on an indexed time column: the union never scans the whole swaps table
-  return rows.map((r) => {
+  const image = (url: string | null) => canonicalImageUrl(url, imagePublicBase());
+  const shapeSwap = (r: { chain_id: number; at: string; tx_hash: string; log_index: number; token: string; name: string; symbol: string; quote: string; trader: string | null; is_buy: boolean; quote_wei: string; image_url: string | null; is_dev: boolean | null }): FeedSwap => {
     const chain = chainKeyOf(r.chain_id) ?? "base";
-    if (r.kind === "launch") return { kind: "launch", chain, at: r.at, tx_hash: r.tx_hash, token: r.token, name: r.name, symbol: r.symbol, launcher: r.who ?? "", lp_fee: r.lp_fee ?? 0, quote_key: quoteInfo(chain, r.quote).key, image_url: canonicalImageUrl(r.image_url, imagePublicBase()) };
     const q = quoteInfo(chain, r.quote);
     const qu = quoteUsd(q, ethUsd);
-    const wei = r.quote_wei ?? "0";
-    return { kind: "swap", chain, at: r.at, tx_hash: r.tx_hash, token: r.token, name: r.name, symbol: r.symbol, trader: r.who, is_buy: Boolean(r.is_buy), is_dev: Boolean(r.is_dev), quote_wei: wei, quote_key: q.key, quote_symbol: q.symbol, quote_decimals: q.decimals, usd: qu === null ? null : units(wei, q.decimals) * qu, image_url: canonicalImageUrl(r.image_url, imagePublicBase()) };
+    return { kind: "swap", chain, at: r.at, tx_hash: r.tx_hash, log_index: r.log_index, token: r.token, name: r.name, symbol: r.symbol, trader: r.trader, is_buy: r.is_buy, is_dev: Boolean(r.is_dev), quote_wei: r.quote_wei, quote_key: q.key, quote_symbol: q.symbol, quote_decimals: q.decimals, usd: qu === null ? null : units(r.quote_wei, q.decimals) * qu, image_url: image(r.image_url) };
+  };
+  const [launches, swaps] = await Promise.all([
+    db<{ chain_id: number; at: string; tx_hash: string; token: string; name: string; symbol: string; quote: string; launcher: string | null; lp_fee: number | null; image_url: string | null }[]>`
+      SELECT l.chain_id, l.block_time AS at, l.tx_hash, l.token, l.name, l.symbol, l.quote, l.launcher, l.lp_fee, m.image_url
+        FROM bb_launches l LEFT JOIN bb_launch_meta m ON m.chain_id = l.chain_id AND m.token = l.token
+        ORDER BY l.block_time DESC LIMIT ${n}`,
+    // Dust (feed-dust.ts) is priced and dropped after the read, so swaps come in pages: the newest 2n first, older pages
+    // only while dust keeps the count short. Each page is a keyset read on the complete unique ordering
+    // (block_time, log_index, chain_id, tx_hash) — a bounded scan of the block_time index, never OFFSET over a live table.
+    collectNonDust<FeedSwap>(
+      async (after, size) =>
+        (
+          await db<{ chain_id: number; at: string; tx_hash: string; log_index: number; token: string; name: string; symbol: string; quote: string; trader: string | null; is_buy: boolean; quote_wei: string; image_url: string | null; is_dev: boolean | null }[]>`
+            SELECT s.chain_id, s.block_time AS at, s.tx_hash, s.log_index, s.token, l.name, l.symbol, l.quote, s.trader, s.is_buy, abs(s.amount0) AS quote_wei, m.image_url, (s.trader = l.launcher) AS is_dev
+              FROM (SELECT * FROM bb_launch_swaps
+                      ${after ? db`WHERE block_time <= ${after.at} AND (block_time, log_index, chain_id, tx_hash) < (${after.at}, ${after.log_index}, ${chainIdOf(after.chain)}, ${after.tx_hash})` : db``}
+                      ORDER BY block_time DESC, log_index DESC, chain_id DESC, tx_hash DESC LIMIT ${size}) s
+              JOIN bb_launches l ON l.chain_id = s.chain_id AND l.token = s.token LEFT JOIN bb_launch_meta m ON m.chain_id = l.chain_id AND m.token = l.token
+              ORDER BY s.block_time DESC, s.log_index DESC, s.chain_id DESC, s.tx_hash DESC`
+        ).map(shapeSwap),
+      n,
+      (i) => `${i.chain}:${i.tx_hash}:${i.log_index}`,
+    ),
+  ]);
+  const items: FeedItem[] = launches.map((r) => {
+    const chain = chainKeyOf(r.chain_id) ?? "base";
+    return { kind: "launch", chain, at: r.at, tx_hash: r.tx_hash, token: r.token, name: r.name, symbol: r.symbol, launcher: r.launcher ?? "", lp_fee: r.lp_fee ?? 0, quote_key: quoteInfo(chain, r.quote).key, image_url: image(r.image_url) };
   });
+  return [...items, ...swaps].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, n);
 }
 
 export type LaunchTotals = {
