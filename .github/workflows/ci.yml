@@ -52,4 +52,6 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge build --sizes
       - run: forge test --match-path test/LaunchFactory.t.sol -vv
+      - run: forge test --match-path test/LaunchFactory.arcGuard.t.sol -vv
+      - run: script/check-arc-factory.sh
       # live-fork suites (FORK_TESTS=true) need RPC access and run locally before a release; see README

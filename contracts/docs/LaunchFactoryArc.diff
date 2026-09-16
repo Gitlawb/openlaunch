@@ -1,0 +1,21 @@
+18c18,27
+< /// @title LaunchFactory
+---
+> /// @title LaunchFactoryArc
+> /// @dev The Arc (chain 5042) deployment of LaunchFactory: a verbatim copy of src/LaunchFactory.sol plus ONE guard.
+> ///      On Arc the native asset is USDC, and the same balance is also the ERC-20 at 0x3600…0000. LaunchLocker keeps
+> ///      one ledger per currency (`reserved`, `claimable`), so a native-quoted position there would let a credited
+> ///      ERC-20 share (a payout on Circle's blocklist) be read as native surplus by another launch's `collect` and
+> ///      swept. `launch` therefore refuses `quote = address(0)`, unconditionally: this contract is only ever deployed on
+> ///      Arc. USDC pools use the ERC-20 face. Everything else,
+> ///      and the locker it deploys, is byte-for-byte the Base / Robinhood Chain code. script/check-arc-factory.sh keeps
+> ///      the two files in sync.
+> ///
+51c60
+< contract LaunchFactory {
+---
+> contract LaunchFactoryArc {
+105a115
+>     error NativeQuoteUnsupported();
+118a129
+>         if (p.quote == address(0)) revert NativeQuoteUnsupported(); // Arc: see the contract note

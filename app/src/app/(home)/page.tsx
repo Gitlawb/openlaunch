@@ -7,9 +7,8 @@ import { listFeed } from "@/lib/launchpad/postsServer";
 import { VOLUME_WINDOWS, getLaunchFeed, getTrending, isTrendingSource, listLaunchesPage, parseSort, trendingFrom, type VolumeWindow } from "@/lib/launchpad/queries";
 import { PAGE_SIZE } from "@/lib/launchpad/paging";
 import { ethUsd } from "@/lib/launchpad/ethPrice";
-import { LAUNCHPAD_CONFIGURED } from "@/lib/launchpad/config";
+import { LAUNCHPAD_CONFIGURED, visibleChainOr } from "@/lib/launchpad/config";
 import { dbConfigured } from "@/lib/db";
-import { isChainKey } from "@/lib/chainPublic";
 import { isFilter } from "@/lib/launchpad/search";
 import TrendingStrip from "@/components/launchpad/TrendingStrip";
 
@@ -19,7 +18,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
   const sp = await searchParams;
   const sort = parseSort(sp.sort, "live");
   const window: VolumeWindow = VOLUME_WINDOWS.includes(sp.window as VolumeWindow) ? (sp.window as VolumeWindow) : "all";
-  const chain = isChainKey(sp.chain) ? sp.chain : null;
+  const chain = visibleChainOr(sp.chain);
   const filter = isFilter(sp.filter) ? sp.filter : null;
   const usd = await ethUsd();
   const listOpts = { sort, window, chain, filter, limit: PAGE_SIZE, ethUsd: usd };
@@ -39,7 +38,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ s
               <PostsFeed initial={posts} compact />
               <section aria-labelledby="free-heading" className="rounded-2xl border border-line bg-paper p-4">
                 <h2 id="free-heading" className="text-sm font-semibold text-ink">Why it&apos;s free</h2>
-                <p className="mt-2 text-pretty text-xs leading-relaxed text-muted">No fee address in the factory. No platform cut in the locker. On either chain.</p>
+                <p className="mt-2 text-pretty text-xs leading-relaxed text-muted">No fee address in the factory. No platform cut in the locker. On every chain.</p>
                 <dl className="mt-4 divide-y divide-line border-y border-line text-xs">
                   <div className="flex items-center justify-between gap-3 py-2.5"><dt className="text-muted">Platform fee</dt><dd className="font-mono font-bold text-up tnum">$0</dd></div>
                   <div className="flex items-center justify-between gap-3 py-2.5"><dt className="text-muted">Trading fee</dt><dd className="font-mono text-ink tnum">0 / 1 / 3%</dd></div>

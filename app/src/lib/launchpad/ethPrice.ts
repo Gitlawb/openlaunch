@@ -56,7 +56,7 @@ export function parseEthSpot(body: unknown): number | null {
 
 export type FeedRound = { answer: bigint; updatedAt: number };
 
-/** USD from a Chainlink ETH/USD round: positive answer, updated within ETH_FEED_MAX_AGE_S of `nowS`; else null. */
+/** USD from a Chainlink ETH/USD round: positive answer, updated within ETH_FEED_MAX_AGE_S of `nowS` and never from the future; else null. */
 export function feedEthUsd(round: FeedRound | null, nowS: number): number | null {
   return feedUsd(round, nowS, ETH_FEED_DECIMALS, ETH_FEED_MAX_AGE_S);
 }
@@ -88,9 +88,13 @@ async function fromCoinbase(fetchFn: FetchFn): Promise<number | null> {
   }
 }
 
-async function fromChainlink(feedFn: FeedFn, nowMs: number): Promise<number | null> {
+async function fromChainlink(feedFn: FeedFn, now: () => number): Promise<number | null> {
   try {
-    return feedEthUsd(await feedFn(), Math.floor(nowMs / 1000));
+    const round = await feedFn();
+    // Sample the clock after the read completes: the Coinbase fallback can
+    // take seconds, and a round published while it was running is already
+    // seconds old — not from the future.
+    return feedEthUsd(round, Math.floor(now() / 1000));
   } catch {
     return null;
   }
@@ -106,17 +110,18 @@ export async function ethUsd(
   if (t - cached.at < ETH_PRICE_TTL_MS && !staleExpired) return cached.usd;
   const fetchFn: FetchFn = opts.fetchFn ?? ((input, init) => fetch(input, init as RequestInit));
   const feedFn: FeedFn = opts.feedFn ?? readFeed;
-  inflight ??= refresh(fetchFn, feedFn, t).finally(() => { inflight = null; });
+  inflight ??= refresh(fetchFn, feedFn, now).finally(() => { inflight = null; });
   return inflight;
 }
 
-async function refresh(fetchFn: FetchFn, feedFn: FeedFn, t: number): Promise<number | null> {
+async function refresh(fetchFn: FetchFn, feedFn: FeedFn, now: () => number): Promise<number | null> {
   let source: EthPriceSource = "coinbase";
   let usd = await fromCoinbase(fetchFn);
   if (usd === null) {
     source = "chainlink";
-    usd = await fromChainlink(feedFn, t);
+    usd = await fromChainlink(feedFn, now);
   }
+  const t = now();
   if (usd !== null) {
     if (source !== cached.source && cached.source !== null) console.warn(`[eth-price] serving ${source} (${source === "chainlink" ? "Coinbase spot unavailable" : "Coinbase spot back"})`);
     cached = { at: t, goodAt: t, usd, source };

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseUnits } from "viem";
-import { BUY_PRESETS, SUGGESTED_BUY_USD, amountForUsd, defaultFirstBuy, suggestFirstBuy } from "./first-buy.ts";
+import { BUY_PRESETS, SUGGESTED_BUY_USD, amountForUsd, defaultFirstBuy, gasReserveInQuote, suggestFirstBuy } from "./first-buy.ts";
 
 const eth = { key: "eth" as const, decimals: 18, usd: null };
 const usdg = { key: "usdg" as const, decimals: 6, usd: 1 };
@@ -63,4 +63,18 @@ test("suggestFirstBuy (ERC-20 quote): the token balance must cover the amount an
   assert.deepEqual(usdgIn(parseUnits("100", 6), undefined), { amount: "25", provisional: true }, "native balance still loading: keep it");
   assert.deepEqual(suggestFirstBuy({ ...base, quote: usdg, balance: undefined, nativeBalance: GAS, gasReserve: GAS, balanceFailed: true }), { amount: null, reason: "unknown-balance" }, "token balance read failed: drop it");
   assert.deepEqual(suggestFirstBuy({ ...base, quote: nvda, balance: parseUnits("1", 18), nativeBalance: GAS, gasReserve: GAS }), { amount: "0.11", provisional: false });
+});
+
+test("suggestFirstBuy (quote that IS the gas token, USDC on Arc): one balance pays the buy and the gas", () => {
+  // Arc's native asset is USDC at 18 decimals; the same balance is the 6-decimal ERC-20 the pool is quoted in
+  const usdc = { key: "usdc" as const, decimals: 6, usd: 1 };
+  const reserve = parseUnits("0.1", 18); // 0.1 USDC of gas, in native wei
+  const arcIn = (usdcBalance: bigint) => suggestFirstBuy({ ...base, quote: usdc, balance: usdcBalance, nativeBalance: usdcBalance * 10n ** 12n, gasReserve: reserve, sharesGasBalance: true });
+  assert.equal(gasReserveInQuote(reserve, 6), parseUnits("0.1", 6), "the reserve is converted into the quote's own units");
+  assert.equal(gasReserveInQuote(reserve, 18), reserve);
+  assert.deepEqual(arcIn(parseUnits("25.1", 6)), { amount: "25", provisional: false }, "exactly amount + reserve");
+  assert.deepEqual(arcIn(parseUnits("25.09", 6)), { amount: null, reason: "insufficient" }, "the ERC-20 balance alone would cover the buy, but nothing would be left for gas");
+  assert.deepEqual(arcIn(parseUnits("25", 6)), { amount: null, reason: "insufficient" });
+  // the same balances for a quote that does NOT share the gas balance (USDG) pass, since gas comes from a separate asset
+  assert.deepEqual(suggestFirstBuy({ ...base, quote: usdg, balance: parseUnits("25", 6), nativeBalance: reserve, gasReserve: reserve }), { amount: "25", provisional: false });
 });

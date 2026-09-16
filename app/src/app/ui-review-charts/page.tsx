@@ -18,7 +18,7 @@ export default async function ChartReview({ searchParams }: { searchParams: Prom
     <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Chart preview</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">The token-page chart with real Openlaunch pools. Check both supported chains and unindexed-pool states. No trades or wallet actions.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">The token-page chart with real Openlaunch pools. Check Base, Robinhood and Arc, plus unindexed-pool states. No trades or wallet actions.</p>
       </div>
       <a href={`https://openlaunch.lol/t/${pool.chain}/${pool.token}`} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 text-xs text-body hover:text-ink">View live token<ArrowUpRight size={14} aria-hidden /></a>
     </header>

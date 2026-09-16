@@ -1,27 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useBalance, useConfig, useReadContract, useSwitchChain } from "wagmi";
 import { getPublicClient, getWalletClient } from "wagmi/actions";
-import { formatEther, formatUnits, maxUint160, maxUint256, parseEther, parseUnits, type Address, type Hex } from "viem";
+import { formatEther, formatUnits, maxUint160, maxUint256, parseUnits, type Address, type Hex } from "viem";
 import { ArrowDown, ArrowRight, Wallet } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/vendor/toggle-group";
 import { btn } from "@/components/ui";
 import { toast } from "./TxToasts";
 import { ERC20_MIN_ABI, PERMIT2_ABI, UNIVERSAL_ROUTER_ABI, V4_QUOTER_ABI } from "@/lib/launchpad/abi";
-import { BUY_PRESETS, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
+import { BUY_PRESETS, NATIVE, SWAP_GAS_RESERVE_WEI, launchpad, quoteUsdOf, sharesGasBalance, type Quote } from "@/lib/launchpad/config";
+import { gasReserveInQuote } from "@/lib/launchpad/first-buy";
 import { fmtCompact, fmtQuoteUnits, fmtUsd, minOut, units, pipsToPct } from "@/lib/launchpad/math";
 import { encodeV4ExactInSingle, type PoolKey } from "@/lib/launchpad/swap";
 import { CHAINS, CHAIN_LABELS, BUILDER_DATA_SUFFIX, explorerTx, type ChainKey } from "@/lib/chainPublic";
 import { tradeQuoteKey } from "@/lib/launchpad/token-market";
+import { SLIPPAGE_PRESETS_BPS, formatSlippageBps, getSlippageBps, getSlippageBpsServer, parseSlippageField, setSlippageBps, subscribeSlippage } from "@/lib/launchpad/trade-slippage";
 import { friendlyError } from "@/lib/errors";
 import { Spinner } from "@/components/Skeleton";
 import ConnectWallet from "@/components/ConnectWallet";
 
 /**
  * In-page buy / sell straight against the token's Uniswap v4 pool via the
- * Universal Router (V4_SWAP). Buys send ETH as value; sells go through Permit2
+ * Universal Router (V4_SWAP). Buys send the native asset as value; sells go through Permit2
  * (one-time ERC-20 approve to Permit2, then a 30-day Permit2 allowance to the
  * router). Quotes come from the V4 Quoter with a 400ms debounce; every send is
  * simulated first so reverts surface before a signature.
@@ -36,7 +38,6 @@ type Phase =
   | { k: "done"; hash: Hex; side: Side }
   | { k: "error"; message: string };
 
-const SLIPPAGE_BPS = 100; // 1%
 const PERMIT_EXPIRY_S = 30 * 24 * 3600;
 
 
@@ -45,7 +46,11 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   const CHAIN_LABEL = CHAIN_LABELS[chain];
   const V4 = launchpad(chain).v4;
   const configured = launchpad(chain).configured;
-  const isNative = quote.key === "eth";
+  const isNative = quote.address.toLowerCase() === NATIVE; // the native asset, whatever the chain calls it (ETH, or USDC on Arc)
+  // A buy paid from the gas balance (the native asset, or on Arc the USDC quote that is its ERC-20 face) keeps the swap's gas back,
+  // in the quote's own units; a buy paid in any other ERC-20 does not touch the gas balance
+  const buyReserve = isNative || sharesGasBalance(chain, quote) ? gasReserveInQuote(SWAP_GAS_RESERVE_WEI[chain], quote.decimals) : 0n;
+  const NATIVE_SYMBOL = CHAIN.nativeCurrency.symbol;
   const quoteUsd = quoteUsdOf(quote, ethUsd);
   const fmtQ = (raw: bigint) => `${fmtQuoteUnits(units(raw, quote.decimals), quote.decimals)} ${quote.symbol}`;
   const router = useRouter();
@@ -54,6 +59,12 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   const { switchChainAsync, isPending: switching } = useSwitchChain();
   const [side, setSide] = useState<Side>("buy");
   const [amount, setAmount] = useState("");
+  // Stored slippage via an external store: the server snapshot is always the default, so server and
+  // client render the same markup during hydration (an effect that sets state is rejected by lint).
+  const getSlippageSnapshot = useMemo(() => () => getSlippageBps(chain), [chain]);
+  const slippageBps = useSyncExternalStore(subscribeSlippage, getSlippageSnapshot, getSlippageBpsServer);
+  const [slippageInput, setSlippageInput] = useState<string | null>(null);
+  const [slippageError, setSlippageError] = useState<string | null>(null);
   const [quote_, setQuote] = useState<{ out: bigint; forKey: string } | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [phase, setPhase] = useState<Phase>({ k: "idle" });
@@ -76,7 +87,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   const onChain = chainId === CHAIN.id;
   const busy = phase.k === "preparing" || phase.k === "approving" || phase.k === "signing" || phase.k === "sent";
   const balance = side === "buy" ? (isNative ? eth.data?.value : (qbal.data as bigint | undefined)) : (tok.data as bigint | undefined);
-  const insufficient = amountIn !== null && balance !== undefined && amountIn > balance;
+  const insufficient = amountIn !== null && balance !== undefined && amountIn + (side === "buy" ? buyReserve : 0n) > balance;
 
   const quoteKey = tradeQuoteKey(chain, token, side, amount);
   // A response can only be used for the exact chain/token/side/amount requested.
@@ -109,11 +120,19 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
     // Lock before the first await, including wallet lookup and RPC preflight.
     transactionLock.current = true;
     setPhase({ k: "preparing" });
+    // Declared here so catch can use it; assigned after preflight so the
+    // synchronous lock/preparing prefix stays dependency-free for the safety
+    // harness. Null means preflight failed before the tolerance was read —
+    // those errors are never slippage reverts, so the default applies.
+    let tradeSlippageBps: number | null = null;
     try {
       if (!onChain) await switchChainAsync({ chainId: CHAIN.id });
       const pub = getPublicClient(config, { chainId: CHAIN.id })!;
       const wallet = await getWalletClient(config, { chainId: CHAIN.id });
-      const min = minOut(quote_.out, SLIPPAGE_BPS);
+      // The closure value is fixed per render, so mid-flight preset picks in a
+      // newer render cannot change this transaction's tolerance either way.
+      tradeSlippageBps = slippageBps;
+      const min = minOut(quote_.out, tradeSlippageBps);
 
       // Whatever ERC20 we are paying with (the token on a sell, an ERC20 quote on a buy) goes through Permit2.
       const payToken: Address | null = side === "sell" ? token : isNative ? null : quote.address;
@@ -166,7 +185,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
       onTraded?.();
       router.refresh();
     } catch (err) {
-      setPhase({ k: "error", message: friendlyError(err) });
+      setPhase({ k: "error", message: friendlyError(err, tradeSlippageBps !== null ? { slippagePct: tradeSlippageBps / 100 } : {}) });
     } finally {
       transactionLock.current = false;
     }
@@ -187,7 +206,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
       <div className="relative">
         <div className="rounded-xl border border-line bg-card px-4 pt-3 pb-4">
           <div className="flex items-center justify-between gap-2 text-[11px] text-muted"><label htmlFor={`amount-${chain}-${token}`}>{side === "buy" ? "You pay" : "You sell"}</label>
-            {balance !== undefined ? <button type="button" disabled={busy} className="max-w-[65%] truncate font-mono text-[10px] hover:text-ink" title="Use maximum available balance (reserve gas for ETH)" onClick={() => setAmount(side === "buy" ? (isNative ? formatEther(balance > parseEther("0.0005") ? balance - parseEther("0.0005") : 0n) : formatUnits(balance, quote.decimals)) : formatEther(balance))}>Bal {side === "buy" ? fmtQ(balance) : fmtCompact(Number(balance) / 1e18)}</button> : <Wallet size={12} aria-hidden />}
+            {balance !== undefined ? <button type="button" disabled={busy} className="max-w-[65%] truncate font-mono text-[10px] hover:text-ink" title={`Use maximum available balance (reserve gas for ${NATIVE_SYMBOL})`} onClick={() => setAmount(side === "buy" ? formatUnits(balance > buyReserve ? balance - buyReserve : 0n, quote.decimals) : formatEther(balance))}>Bal {side === "buy" ? fmtQ(balance) : fmtCompact(Number(balance) / 1e18)}</button> : <Wallet size={12} aria-hidden />}
           </div>
           <div className="mt-2 flex items-center gap-3">
             <input id={`amount-${chain}-${token}`} disabled={busy} className="min-w-0 w-full bg-transparent py-1 font-mono text-[30px] leading-tight text-ink outline-offset-4 placeholder:text-faint tnum" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.0" inputMode="decimal" autoComplete="off" aria-label={side === "buy" ? `${quote.symbol} amount` : `${symbol} amount`} />
@@ -207,8 +226,48 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
         </div>
       </div>
       <dl className="space-y-2 text-[11px]">
-        <div className="flex justify-between gap-3"><dt className="text-muted">Minimum received</dt><dd className="text-right font-mono text-body tnum">{quote_ && quote_.forKey === quoteKey ? (side === "buy" ? `${fmtCompact(Number(minOut(quote_.out, SLIPPAGE_BPS)) / 1e18)} ${symbol}` : fmtQ(minOut(quote_.out, SLIPPAGE_BPS))) : "—"}</dd></div>
-        <div className="flex justify-between gap-3"><dt className="text-muted">Slippage tolerance</dt><dd className="font-mono text-body tnum">1%</dd></div>
+        <div className="flex justify-between gap-3"><dt className="text-muted">Minimum received</dt><dd className="text-right font-mono text-body tnum">{quote_ && quote_.forKey === quoteKey ? (side === "buy" ? `${fmtCompact(Number(minOut(quote_.out, slippageBps)) / 1e18)} ${symbol}` : fmtQ(minOut(quote_.out, slippageBps))) : "—"}</dd></div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-muted"><label htmlFor={`slippage-${chain}-${token}`}>Slippage tolerance</label></dt>
+          <dd className="flex items-center gap-1.5">
+            {SLIPPAGE_PRESETS_BPS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                disabled={busy}
+                aria-pressed={slippageBps === p}
+                aria-label={`Slippage ${formatSlippageBps(p)}`}
+                onClick={() => { setSlippageBps(chain, p); setSlippageInput(null); setSlippageError(null); }}
+                className={`min-h-7 rounded-md border px-2 font-mono text-[11px] tnum disabled:opacity-40 ${slippageBps === p ? "border-line-strong bg-paper text-ink" : "border-line text-muted hover:border-line-strong"}`}
+              >
+                {formatSlippageBps(p)}
+              </button>
+            ))}
+            <span className="relative">
+              <input
+                id={`slippage-${chain}-${token}`}
+                disabled={busy}
+                className="h-7 w-16 rounded-md border border-line bg-transparent px-1.5 pr-5 text-right font-mono text-[11px] text-ink tnum outline-offset-2 placeholder:text-faint disabled:opacity-40"
+                value={slippageInput ?? String(slippageBps / 100)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setSlippageInput(raw);
+                  const parsed = parseSlippageField(raw);
+                  if (parsed === null) { setSlippageError(raw.trim() === "" ? null : "0.1–20%"); return; }
+                  setSlippageError(null);
+                  setSlippageBps(chain, parsed);
+                }}
+                onBlur={() => setSlippageInput(null)}
+                inputMode="decimal"
+                autoComplete="off"
+                aria-label="Custom slippage percent"
+                aria-describedby={slippageError ? `slippage-err-${chain}` : undefined}
+              />
+              <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-muted">%</span>
+            </span>
+          </dd>
+        </div>
+        {slippageError ? <p id={`slippage-err-${chain}`} role="alert" className="text-right text-[10px] text-down-ink">Use 0.1–20%.</p> : null}
       </dl>
 
       {!configured ? (

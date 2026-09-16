@@ -7,6 +7,7 @@ const CONTRACT_ERROR_MESSAGES: Record<string, string> = {
   BadTick: "Start price out of range.",
   BadSupply: "Supply too large.",
   QuoteOrdering: "Token address must sort above the quote. Try again with a new salt.",
+  NativeQuoteUnsupported: "This chain does not take its native asset as a quote. Price the token in USDC instead.",
   NoLiquidity: "Supply too small to seed liquidity.",
   UnknownPosition: "Unknown launch.",
   BadRecipients: "Beneficiary shares must add up to 100%.",
@@ -24,7 +25,7 @@ export function friendlyError(err: unknown, opts: { slippagePct?: number } = {})
     if (name && slippage.test(name)) return `Price moved more than ${slippagePct}%. Try again.`; // decoded router error (e.g. V4TooLittleReceived)
     if (name) return `Reverted: ${name}`;
     const short = err.shortMessage || err.message;
-    if (/insufficient funds/i.test(short)) return "Not enough ETH for this transaction plus gas.";
+    if (/insufficient funds/i.test(short)) return "Not enough of the gas token (ETH, or USDC on Arc) for this transaction plus gas.";
     if (slippage.test(short)) return `Price moved more than ${slippagePct}%. Try again.`;
     return short.length > 200 ? `${short.slice(0, 200)}…` : short;
   }

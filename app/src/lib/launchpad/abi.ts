@@ -112,6 +112,7 @@ export const LAUNCH_FACTORY_ABI = [
   { type: "error", name: "SaltUsed", inputs: [] },
   { type: "error", name: "QuoteOrdering", inputs: [] },
   { type: "error", name: "NoSaltFound", inputs: [] },
+  { type: "error", name: "NativeQuoteUnsupported", inputs: [] }, // LaunchFactoryArc only: Arc pools quote the ERC-20 USDC, never the native asset
 ] as const;
 
 export const LAUNCH_LOCKER_ABI = [

@@ -1,15 +1,23 @@
 /** Pure search / filter helpers (client + server; node --test loads this directly). */
-export type LaunchFilter = "fee0" | "burn" | "usdg" | "gitlawb" | "today";
-/** `chain`: the filter only makes sense on that chain (its quote is not offered elsewhere) → hidden when another chain is selected. */
-export const FILTERS: { key: LaunchFilter; label: string; title: string; chain?: "base" | "robinhood" }[] = [
+import { newestFirst } from "./paging";
+import { CHAIN_KEYS, type ChainKey } from "../chainKeys.ts";
+import { GITLAWB_ADDRESSES } from "./gitlawb.ts";
+export type LaunchFilter = "fee0" | "burn" | "usdg" | "usdc" | "gitlawb" | "today";
+/** `chains`: the filter only makes sense on those chains (its quote is not offered elsewhere) → hidden when another chain is selected. */
+export const FILTERS: { key: LaunchFilter; label: string; title: string; chains?: ChainKey[] }[] = [
   { key: "fee0", label: "0% fee", title: "feeless pools" },
   { key: "burn", label: "fees burned", title: "no beneficiary; every fee is burned" },
-  { key: "usdg", label: "USDG", title: "priced in USDG (Robinhood Chain)", chain: "robinhood" },
-  { key: "gitlawb", label: "GITLAWB", title: "priced in GITLAWB (Base or Robinhood Chain)" },
+  { key: "usdg", label: "USDG", title: "priced in USDG (Robinhood Chain)", chains: ["robinhood"] },
+  { key: "usdc", label: "USDC", title: "priced in USDC (Arc)", chains: ["arc"] },
+  { key: "gitlawb", label: "GITLAWB", title: "priced in GITLAWB (Base or Robinhood Chain)", chains: CHAIN_KEYS.filter((k) => GITLAWB_ADDRESSES[k] !== null) },
   { key: "today", label: "today", title: "launched in the last 24 hours" },
 ];
+/** Whether a filter is offered with `chain` selected (null = all chains: every filter). */
+export function filterOnChain(f: { chains?: ChainKey[] }, chain: ChainKey | null): boolean {
+  return !f.chains || chain === null || f.chains.includes(chain);
+}
 export function isFilter(v: unknown): v is LaunchFilter {
-  return v === "fee0" || v === "burn" || v === "usdg" || v === "gitlawb" || v === "today";
+  return v === "fee0" || v === "burn" || v === "usdg" || v === "usdc" || v === "gitlawb" || v === "today";
 }
 
 /** Trim, collapse whitespace, strip a leading $ (people type $SYM), lowercase. */
@@ -36,6 +44,7 @@ export function matchesFilter(l: Matchable, f: LaunchFilter | null, now = Date.n
   if (f === "fee0") return l.lp_fee === 0;
   if (f === "burn") return l.lp_fee > 0 && l.recipients.length === 1 && l.recipients[0].payout.toLowerCase() === DEAD;
   if (f === "usdg") return l.quote_key === "usdg";
+  if (f === "usdc") return l.quote_key === "usdc";
   if (f === "gitlawb") return l.quote_key === "gitlawb";
   return now - new Date(l.block_time).getTime() < 86_400_000;
 }
@@ -49,4 +58,26 @@ export function rankHit(l: Matchable, q: string): number {
   if (s.startsWith(n)) return 1;
   if (name.startsWith(n)) return 2;
   return 3;
+}
+
+/**
+ * Escape user input for a Postgres LIKE/ILIKE pattern (`%`, `_` and the escape
+ * char itself). Without this, searching for `%` or `_` matches nearly every
+ * row instead of the literal character.
+ */
+export function escapeLike(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+/** A search hit with the cross-chain ordering keys (block numbers are only comparable within one chain). */
+export type RankedHit = Matchable & { chain_id: number; block_number: number };
+
+/**
+ * Full search ordering: relevance rank first, then cross-chain newest-first
+ * (block time, chain id, block number — never raw block numbers across
+ * chains, mirroring the list sorts). The SQL pre-limit must use the same key
+ * or exact matches on a low-height chain never reach the ranker.
+ */
+export function compareSearchHit(a: RankedHit, b: RankedHit, q: string): number {
+  return rankHit(a, q) - rankHit(b, q) || newestFirst(a, b);
 }

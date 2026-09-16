@@ -16,7 +16,12 @@ DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
 val() { { grep -E "^$1=" "$FILE" || true; } | head -1 | cut -d= -f2- | sed 's/^"//;s/"$//'; }
 
 REQUIRED=(BASE_RPC_URL ROBINHOOD_RPC_URL NEXT_PUBLIC_SITE_URL NEXT_PUBLIC_LAUNCH_FACTORY NEXT_PUBLIC_LAUNCH_LOCKER LAUNCH_DEPLOY_BLOCK NEXT_PUBLIC_LAUNCH_FACTORY_ROBINHOOD NEXT_PUBLIC_LAUNCH_LOCKER_ROBINHOOD LAUNCH_DEPLOY_BLOCK_ROBINHOOD)
-OPTIONAL=(BASE_B20_RPC_URL LAUNCH_SYNC_CONFIRMATIONS LAUNCH_SYNC_LOOP ADMIN_WALLETS IMAGE_PUBLIC_BASE)
+# Arc: ARC_RPC_URL (Alchemy) and the contract settings become required once the factory is deployed there; until then the site shows
+# Arc as "Coming soon" and the server falls back to the public RPC.
+OPTIONAL=(ARC_RPC_URL NEXT_PUBLIC_LAUNCH_FACTORY_ARC NEXT_PUBLIC_LAUNCH_LOCKER_ARC LAUNCH_DEPLOY_BLOCK_ARC BASE_B20_RPC_URL LAUNCH_SYNC_CONFIRMATIONS LAUNCH_SYNC_CONFIRMATIONS_ARC LAUNCH_SYNC_LOOP ADMIN_WALLETS IMAGE_PUBLIC_BASE)
+# Once the Arc factory is set, its locker, deploy block and RPC are required too: without the deploy block the indexer never
+# runs for Arc and the site would show a chain it does not index.
+if [ -n "$(val NEXT_PUBLIC_LAUNCH_FACTORY_ARC)" ]; then REQUIRED+=(NEXT_PUBLIC_LAUNCH_LOCKER_ARC LAUNCH_DEPLOY_BLOCK_ARC ARC_RPC_URL); fi
 
 args=(); missing=()
 for k in "${REQUIRED[@]}"; do v=$(val "$k"); if [ -n "$v" ]; then args+=("$k=$v"); echo "  staged $k"; else missing+=("$k"); fi; done

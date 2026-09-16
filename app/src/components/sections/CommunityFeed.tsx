@@ -9,6 +9,7 @@ import TokenAvatar from "@/components/launchpad/TokenAvatar";
 import WalletAvatar from "@/components/WalletAvatar";
 import { useLive } from "@/components/launchpad/LiveProvider";
 import { CHAIN_SHORT, shortAddr, type ChainKey } from "@/lib/chainPublic";
+import { VISIBLE_CHAINS } from "@/lib/launchpad/config";
 import { ago, nowMs } from "@/lib/launchpad/time";
 import type { PostRow } from "@/lib/launchpad/postsServer";
 import { communityFingerprint, filterCommunityPosts } from "@/lib/launchpad/community-feed";
@@ -57,8 +58,7 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
       <div className={styles.filters}>
         <ToggleGroup multiple={false} value={[chain ?? "all"]} onValueChange={(values) => { if (values[0]) setChain(values[0] === "all" ? null : values[0] as ChainKey); }} aria-label="Filter posts by chain">
           <ToggleGroupItem value="all" className="min-h-11">All chains</ToggleGroupItem>
-          <ToggleGroupItem value="base" className="min-h-11">Base</ToggleGroupItem>
-          <ToggleGroupItem value="robinhood" className="min-h-11">Robinhood</ToggleGroupItem>
+          {VISIBLE_CHAINS.map((k) => <ToggleGroupItem key={k} value={k} className="min-h-11">{CHAIN_SHORT[k]}</ToggleGroupItem>)}
         </ToggleGroup>
         <div className={styles.search}>
           <Search size={15} aria-hidden="true" />
@@ -112,7 +112,7 @@ export default function CommunityFeed({ initial, loadError = false }: { initial:
         <h2>Join from the token.</h2>
         <p>Every post belongs to a token. The full thread, the market and the contracts stay together.</p>
         <ol className={styles.steps}>
-          <li><span>01</span><div><h3>Find your token</h3><p>Browse launches on either chain.</p></div></li>
+          <li><span>01</span><div><h3>Find your token</h3><p>Browse launches on any chain.</p></div></li>
           <li><span>02</span><div><h3>Open Conversation</h3><p>Read the thread or reply to a post.</p></div></li>
           <li><span>03</span><div><h3>Sign your words</h3><p>A wallet signature, not a transaction.</p></div></li>
         </ol>

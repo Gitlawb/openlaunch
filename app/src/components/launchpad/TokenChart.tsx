@@ -110,6 +110,8 @@ function ChartMessage({ title, description }: { title: string; description: stri
 }
 
 function ChartFrame({ url, symbol, onError }: { url: string; symbol: string; onError: () => void }) {
+  // The cross-origin load event proves navigation, not rendered candles. Keep
+  // On-chain available and never replace a healthy frame on a blind timeout.
   const [state, setState] = useState<"loading" | "loaded" | "slow">("loading");
   useEffect(() => {
     const timeout = setTimeout(() => setState((current) => current === "loading" ? "slow" : current), 15_000);

@@ -4,22 +4,25 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { useRouter } from "next/navigation";
 import { useAccount, useBalance, useConfig, useReadContract, useSwitchChain } from "wagmi";
 import { getPublicClient, getWalletClient } from "wagmi/actions";
-import { isAddress, maxUint160, maxUint256, parseEventLogs, parseUnits, zeroAddress, type Address, type Hex, type PublicClient, type WalletClient } from "viem";
+import { maxUint160, maxUint256, parseEventLogs, parseUnits, zeroAddress, type Address, type Hex, type PublicClient, type WalletClient } from "viem";
 import TokenAvatar from "./TokenAvatar";
 import ImageUpload from "./ImageUpload";
-import FeeChip from "./FeeChip";
+import FeeChip, { feeModeOf } from "./FeeChip";
+import LaunchFeeSettings, { type FeeBeneficiary } from "./LaunchFeeSettings";
 import GitlawbBadge from "./GitlawbBadge";
 import { toast } from "./TxToasts";
 import { btn, card, helper, input, label } from "@/components/ui";
 import { ERC20_MIN_ABI, ERC20_TRANSFER_EVENT, LAUNCH_FACTORY_ABI, PERMIT2_ABI, UNIVERSAL_ROUTER_ABI, V4_QUOTER_ABI } from "@/lib/launchpad/abi";
-import { BPS, DEFAULT_SUPPLY, FEE_PRESETS, TICK_SPACING, launchpad, quoteUsdOf, type Quote } from "@/lib/launchpad/config";
+import { DEAD, DEFAULT_SUPPLY, FEE_PRESETS, GAS_RESERVE_WEI, MAX_RECIPIENTS, STOCK_SOURCE, TICK_SPACING, launchpad, quoteUsdOf, sharesGasBalance, type Quote } from "@/lib/launchpad/config";
+import { bpsToPct, buildRecipients, describeShares, emptyRow, isBurnAddress, type Recipient, type RecipientRow } from "@/lib/launchpad/recipients";
 import { capChipLabel, capDisplay, capEntry, capPick, capPresets, capToQuote } from "@/lib/launchpad/market-cap";
+import { uppercaseInPlace } from "@/lib/launchpad/symbol-input";
 import { fdvForStartTick, fmtCompact, fmtQuoteUnits, fmtUsd, initialBuyPreview, minOut, startTickForFdv, tickToTokensPerQuote, units } from "@/lib/launchpad/math";
-import { BUY_PRESETS, defaultFirstBuy, suggestFirstBuy } from "@/lib/launchpad/first-buy";
+import { BUY_PRESETS, defaultFirstBuy, gasReserveInQuote, suggestFirstBuy } from "@/lib/launchpad/first-buy";
 import { getFirstBuyDeclined, getFirstBuyDeclinedServer, setFirstBuyDeclined, subscribeFirstBuyDeclined } from "@/lib/launchpad/first-buy-session";
 import { encodeV4ExactInSingle, type PoolKey } from "@/lib/launchpad/swap";
 import { GITLAWB_SITE } from "@/lib/launchpad/gitlawb";
-import { CHAINS, CHAIN_LABELS, CHAIN_KEYS, BUILDER_DATA_SUFFIX, explorerTx, shortAddr, type ChainKey } from "@/lib/chainPublic";
+import { CHAINS, CHAIN_LABELS, CHAIN_KEYS, DEFAULT_CHAIN, BUILDER_DATA_SUFFIX, explorerTx, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { friendlyError } from "@/lib/errors";
 import { Spinner } from "@/components/Skeleton";
 import { startNav } from "@/components/RouteProgress";
@@ -43,15 +46,12 @@ type Phase =
   | { k: "done"; hash: Hex; token: string }
   | { k: "error"; message: string };
 
-type Beneficiary = "burn" | "me" | "custom";
-
+// A chain without contracts reads as upcoming to visitors; in development the reason is what matters.
+const UNCONFIGURED_CHAIN_COPY = process.env.NODE_ENV === "production" ? "Coming soon." : "Not configured here. Contract settings are missing in this environment.";
 const FIRST_BUY_SLIPPAGE_BPS = 300; // Other buyers can trade between the launch and this separate buy.
 const PERMIT_EXPIRY_S = 30 * 24 * 3600;
-// Native ETH kept back from a first buy: the launch transaction is sent first and pays its own gas, then the buy (and, for
-// an ERC-20 quote, its approvals). Both parts are generous for Base and Robinhood Chain gas prices.
-const LAUNCH_GAS_WEI = 1_000_000_000_000_000n; // 0.001 ETH: deploy + pool init + position mint
-const BUY_GAS_WEI = 500_000_000_000_000n; // 0.0005 ETH: approvals + swap
-const GAS_RESERVE_WEI = LAUNCH_GAS_WEI + BUY_GAS_WEI;
+// The native amount kept back from a first buy for gas is per chain (lib/launchpad/config.ts GAS_RESERVE_WEI): the launch
+// transaction is sent first and pays its own gas, then the buy (and, for an ERC-20 quote, its approvals).
 
 function randomSalt(): Hex {
   const b = new Uint8Array(32);
@@ -62,11 +62,34 @@ function randomSalt(): Hex {
 /** Shown wherever the form is blocked on a stock choice: one sentence, one place. */
 const STOCK_PICK_MESSAGE = "Pick a stock to price the token in, or switch the quote.";
 
-function stockIssuerDisclaimer(chain: ChainKey): string {
-  return chain === "base"
-    ? "Coinbase tokenized stocks are securities issued by Coinbase under Regulation S and are not offered to persons in the US, UK, Canada, Australia, Singapore or Switzerland. That is Coinbase's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4."
-    : "Robinhood Stock Tokens are tokenised securities issued by Robinhood and are not offered to US persons. That is Robinhood's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.";
-}
+/** Per-chain copy in the form. A chain's quotes and stock registry differ, so its sentences do too; `stock` is null where no registry exists. */
+const CHAIN_COPY: Record<ChainKey, { blurb: string; gitlawbOrigin: string; stock: { pays: string; badge: string; empty: string; issuer: string } | null }> = {
+  base: {
+    blurb: "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents.",
+    gitlawbOrigin: " on Base",
+    stock: {
+      pays: "Buyers pay with a Coinbase tokenized stock; fees are paid in that stock.",
+      badge: "Coinbase stock",
+      empty: "No match. 13 Coinbase tokenized stocks are available on Base: NVDAc, AAPLc, TSLAc, METAc, GOOGLc, AMZNc, MSFTc, MSTRc, COINc, CRCLc, INTCc, SNDKc, SPCXc.",
+      issuer: "Coinbase tokenized stocks are securities issued by Coinbase under Regulation S and are not offered to persons in the US, UK, Canada, Australia, Singapore or Switzerland. That is Coinbase's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.",
+    },
+  },
+  robinhood: {
+    blurb: "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents.",
+    gitlawbOrigin: ", bridged 1:1 from Base to Robinhood Chain over LayerZero",
+    stock: {
+      pays: "Buyers pay with a Robinhood Stock Token; fees are paid in that stock.",
+      badge: "Robinhood stock",
+      empty: "No match. 194 Robinhood Stock Tokens are available, e.g. AAPL, TSLA, NVDA, SPY.",
+      issuer: "Robinhood Stock Tokens are tokenised securities issued by Robinhood and are not offered to US persons. That is Robinhood's rule for the stock token, not ours. The pool itself is ordinary Uniswap v4.",
+    },
+  },
+  arc: {
+    blurb: "Priced in USDC (dollars). Gas is paid in USDC too: cents per trade, well under a dollar to launch.",
+    gitlawbOrigin: "",
+    stock: null,
+  },
+};
 
 type FirstBuyCtx = { pub: PublicClient; wallet: WalletClient; address: Address; V4: ReturnType<typeof launchpad>["v4"]; quote: Quote; feePips: number; CHAIN: (typeof CHAINS)[ChainKey]; setPhase: (p: Phase) => void };
 
@@ -138,7 +161,7 @@ async function firstBuy(ctx: FirstBuyCtx, tokenAddr: Address, launchHash: Hex, a
   return received > 0n ? { hash: h, out: received, exact: true } : { hash: h, out, exact: false };
 }
 
-export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "base" }: { ethUsd: number | null; gitlawbUsd?: number | null; initialChain?: ChainKey }) {
+export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = DEFAULT_CHAIN }: { ethUsd: number | null; gitlawbUsd?: number | null; initialChain?: ChainKey }) {
   const router = useRouter();
   const [chain, setChain] = useState<ChainKey>(initialChain);
   const cfg = launchpad(chain);
@@ -152,6 +175,11 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const staticQuote: Quote = quoteKey === "stock" && stock ? stock : (cfg.quotes.find((q) => q.key === quoteKey) ?? cfg.quotes[0]);
   const quote: Quote = staticQuote.key === "gitlawb" ? { ...staticQuote, usd: gitlawbUsd } : staticQuote;
   const quoteUsd = quoteUsdOf(quote, ethUsd);
+  const NATIVE_SYMBOL = CHAIN.nativeCurrency.symbol;
+  const gasReserve = GAS_RESERVE_WEI[chain];
+  // On Arc the USDC quote IS the gas token (one balance, two faces): the reserve then comes out of the quote balance as well.
+  const sharedGas = sharesGasBalance(chain, quote);
+  const reserveInQuote = quote.key === "eth" || sharedGas ? gasReserveInQuote(gasReserve, quote.decimals) : 0n;
   // stock search (per-chain registry via our server; only registry addresses are ever offered)
   useEffect(() => {
     if (quoteKey !== "stock") return;
@@ -184,8 +212,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const [mcapPick, setMcapPick] = useState<number | null>(null);
   const [customMcap, setCustomMcap] = useState("");
   const [feePips, setFeePips] = useState<number>(0);
-  const [beneficiary, setBeneficiary] = useState<Beneficiary>("burn");
-  const [customAddr, setCustomAddr] = useState("");
+  const [beneficiary, setBeneficiary] = useState<FeeBeneficiary>("burn");
+  // Split editor rows, kept while the creator toggles cards so nothing typed is lost; only read in "custom" mode.
+  const [rows, setRows] = useState<RecipientRow[]>([emptyRow()]);
   // First buy: what the creator typed, or the suggestion (lib/launchpad/first-buy.ts) unless they cleared it.
   // A typed amount is bound to the quote it was typed for: switching chain or quote must not carry "25" USDG over as 25 ETH.
   const [typedBuyFor, setTypedBuyFor] = useState<{ amount: string; quoteId: string } | null>(null);
@@ -222,6 +251,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const cap = (v: number) => capDisplay(v, quoteUsd, quote);
 
   const onChain = chainId === CHAIN.id;
+  // Normalize for the preview and launch payload, never the live IME composition.
   const symbolClean = symbol.trim().toUpperCase();
   // Balances, read as soon as a wallet is connected so the suggestion can be decided: the native balance always (it pays
   // the buy's gas, and the approvals an ERC-20 quote needs first), plus the quote token's balance for an ERC-20 quote.
@@ -232,38 +262,53 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
   const buyBalanceFailed = quote.key === "eth" ? ethBal.isError : quoteBal.isError;
   // The suggested buy is selected from the start; a connected wallet's balances can only take it away (or a failed read),
   // so it can never block the launch below. A typed amount keeps the strict checks.
-  const suggestion = suggestFirstBuy({ quote, connected: Boolean(address) && onChain, balance: buyBalance, nativeBalance, balanceFailed: buyBalanceFailed || ethBal.isError, gasReserve: GAS_RESERVE_WEI, declined: buyDeclined || Boolean(typedBuy), parse: parseUnits });
+  const suggestion = suggestFirstBuy({ quote, connected: Boolean(address) && onChain, balance: buyBalance, nativeBalance, balanceFailed: buyBalanceFailed || ethBal.isError, gasReserve, sharesGasBalance: sharedGas, declined: buyDeclined || Boolean(typedBuy), parse: parseUnits });
   const initialBuy = typedBuy || suggestion.amount || "";
   const buySource: "typed" | "suggested" | "none" = typedBuy ? "typed" : suggestion.amount ? "suggested" : "none";
   const initialBuyRaw = parseBuyAmount(initialBuy, quote.decimals);
   const errors: string[] = [];
   if (name.trim().length === 0 || name.trim().length > 32) errors.push("Name: 1–32 characters.");
-  if (!/^[A-Z0-9]{1,10}$/.test(symbolClean)) errors.push("Symbol: 1–10 letters or digits.");
+  if (!/^[A-Z0-9]{1,10}$/.test(symbolClean)) errors.push("Symbol: use 1–10 English letters (A–Z) or digits (0–9).");
   if (startTick === null) errors.push("Starting market cap must be a positive number.");
   if (quoteKey === "stock" && !stock) errors.push(STOCK_PICK_MESSAGE);
   if (quoteKey === "gitlawb" && quote.usd === null && !customMcap.trim() && startTick === null) errors.push("GITLAWB price unavailable right now: enter a custom starting market cap in GITLAWB, or reload.");
   if (image && !/^https:\/\//.test(image.trim())) errors.push("Image must be an https URL.");
   if (website && !/^https:\/\//.test(website.trim())) errors.push("Website must be an https URL.");
-  if (feePips > 0 && beneficiary === "custom" && !isAddress(customAddr.trim())) errors.push("Beneficiary: enter a valid address.");
+  const split = useMemo(() => buildRecipients(rows), [rows]);
+  if (feePips > 0 && beneficiary === "custom") errors.push(...split.errors);
   if (initialBuyRaw === undefined) errors.push(`First buy: enter an amount in ${quote.symbol}, or leave it empty.`);
 
   // the launch is irreversible and the buy comes after it: never let a launch through while the buy's funding is unknown
   if (initialBuyRaw && address && buyBalance === undefined) errors.push(buyBalanceFailed ? `First buy: could not read your ${quote.symbol} balance. Retry, or clear the amount.` : "First buy: checking your balance…");
-  if (initialBuyRaw && buyBalance !== undefined && initialBuyRaw + (quote.key === "eth" ? GAS_RESERVE_WEI : 0n) > buyBalance)
-    errors.push(quote.key === "eth" ? "First buy: not enough ETH (leave a little for gas)." : `First buy: not enough ${quote.symbol} in this wallet.`);
-  // an ERC-20 first buy still pays gas (and its approvals) in ETH: the token balance alone is not enough
-  if (initialBuyRaw && quote.key !== "eth" && address && nativeBalance === undefined) errors.push(ethBal.isError ? "First buy: could not read your ETH balance for gas. Retry, or clear the amount." : "First buy: checking your ETH balance for gas…");
-  if (initialBuyRaw && quote.key !== "eth" && nativeBalance !== undefined && nativeBalance < GAS_RESERVE_WEI) errors.push("First buy: not enough ETH for gas (the launch, the approval and the buy each need a little ETH).");
+  if (initialBuyRaw && buyBalance !== undefined && initialBuyRaw + reserveInQuote > buyBalance)
+    errors.push(reserveInQuote > 0n ? `First buy: not enough ${quote.symbol} (leave a little for gas).` : `First buy: not enough ${quote.symbol} in this wallet.`);
+  // an ERC-20 first buy still pays gas (and its approvals) in the native asset: the token balance alone is not enough
+  if (initialBuyRaw && quote.key !== "eth" && !sharedGas && address && nativeBalance === undefined) errors.push(ethBal.isError ? `First buy: could not read your ${NATIVE_SYMBOL} balance for gas. Retry, or clear the amount.` : `First buy: checking your ${NATIVE_SYMBOL} balance for gas…`);
+  if (initialBuyRaw && quote.key !== "eth" && !sharedGas && nativeBalance !== undefined && nativeBalance < gasReserve) errors.push(`First buy: not enough ${NATIVE_SYMBOL} for gas (the launch, the approval and the buy each need a little ${NATIVE_SYMBOL}).`);
   const valid = errors.length === 0;
   const buyPreview = initialBuyRaw && startTick !== null ? initialBuyPreview({ startTick, amountInRaw: initialBuyRaw, lpFeePips: feePips, quoteDecimals: quote.decimals }) : null;
   const buyUsd = initialBuyRaw && quoteUsd ? units(initialBuyRaw, quote.decimals) * quoteUsd : null;
   const fmtPct = (p: number) => (p >= 10 ? p.toFixed(0) : p >= 1 ? p.toFixed(1) : p.toFixed(2)) + "%";
 
-  const recipients = useMemo(() => {
-    if (feePips === 0 || beneficiary === "burn") return [] as { payout: Address; bps: number }[];
-    const payout = (beneficiary === "me" ? address : (customAddr.trim() as Address)) as Address | undefined;
-    return payout ? [{ payout, bps: BPS }] : [];
-  }, [feePips, beneficiary, address, customAddr]);
+  const recipients = useMemo<Recipient[]>(() => {
+    if (feePips === 0 || beneficiary === "burn") return [];
+    if (beneficiary === "me") return address ? [{ payout: address, bps: 10_000 }] : [];
+    return split.recipients;
+  }, [feePips, beneficiary, address, split]);
+  // An unfinished split (or "Me" before a wallet connects) has no recipients yet; that must preview as the routing being set up,
+  // never as a burn. Launching stays blocked by the validation errors until the list is complete.
+  const feeMode = feePips > 0 && beneficiary !== "burn" && recipients.length === 0 ? (beneficiary === "custom" && rows.length > 1 ? "split" : "creator") : feeModeOf(feePips, recipients);
+  const feeRouteSub = feeMode === "free" ? "free pool" : feeMode === "burn" ? "burned" : feeMode === "split" ? `split ${recipients.length || rows.length} ways` : "to beneficiary";
+  const setRow = (i: number, patch: Partial<RecipientRow>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const addRow = (payout = "") => setRows((rs) => (rs.length >= MAX_RECIPIENTS ? rs : [...rs, { payout, pct: rs.length === 0 ? "100" : "" }]));
+  const removeRow = (i: number) => setRows((rs) => (rs.length <= 1 ? [emptyRow()] : rs.filter((_, j) => j !== i)));
+  // Prefer filling an empty address row over appending, so "Add me" on a fresh editor gives one row, not two.
+  const quickAdd = (payout: string) => {
+    const empty = rows.findIndex((r) => r.payout.trim() === "");
+    if (empty >= 0) setRow(empty, { payout, pct: rows[empty].pct || (rows.length === 1 ? "100" : "") });
+    else addRow(payout);
+  };
+  const hasRow = (payout: string) => rows.some((r) => r.payout.trim().toLowerCase() === payout.toLowerCase());
 
   async function launch() {
     if (!valid || !address || !cfg.factory || startTick === null) return;
@@ -384,9 +429,9 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         <section className={`${card} p-5 space-y-4`}>
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
             <h2 className="text-sm font-semibold text-ink">Chain</h2>
-            <span className="text-xs text-muted">same contracts, same rules, on both</span>
+            <span className="text-xs text-muted">same launch, same rules, on every chain</span>
           </div>
-          <div className="grid sm:grid-cols-2 gap-2">
+          <div className="grid sm:grid-cols-3 gap-2">
             {CHAIN_KEYS.map((k) => {
               const active = chain === k;
               const ok = launchpad(k).configured;
@@ -410,7 +455,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                   aria-pressed={active}
                 >
                   <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{CHAIN_LABELS[k]}</div>
-                  <div className="text-xs text-body mt-0.5 leading-snug">{k === "base" ? "Priced in ETH, GITLAWB or a Coinbase tokenized stock. Gas ≈ cents." : ok ? "Priced in USDG (dollars), ETH, GITLAWB or a Robinhood Stock Token. Gas ≈ cents." : "Coming soon."}</div>
+                  <div className="text-xs text-body mt-0.5 leading-snug">{!ok ? UNCONFIGURED_CHAIN_COPY : CHAIN_COPY[k].blurb}</div>
                 </button>
               );
             })}
@@ -420,7 +465,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             <div className="flex items-center gap-2 flex-wrap">
               <span className={label}>Priced in</span>
               <div className="flex items-center rounded-full border border-line bg-card p-0.5" role="group" aria-label="quote asset">
-                {[...cfg.quotes.map((q) => ({ key: q.key, label: q.symbol })), { key: "stock" as const, label: "Stock" }].map((q) => (
+                {[...cfg.quotes.map((q) => ({ key: q.key, label: q.symbol })), ...(STOCK_SOURCE[chain] ? [{ key: "stock" as const, label: "Stock" }] : [])].map((q) => (
                   <button
                     key={q.key}
                     type="button"
@@ -437,7 +482,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 ))}
               </div>
               <span className="text-xs text-muted">
-                {quote.key === "usdg" ? "Buyers pay with USDG; market cap and fees are in dollars." : quote.key === "gitlawb" ? "Buyers pay with GITLAWB; fees are paid in GITLAWB, or burned." : quote.key === "stock" ? (chain === "base" ? "Buyers pay with a Coinbase tokenized stock; fees are paid in that stock." : "Buyers pay with a Robinhood Stock Token; fees are paid in that stock.") : "Buyers pay with ETH."}
+                {quote.key === "usdg" || quote.key === "usdc" ? `Buyers pay with ${quote.symbol}; market cap and fees are in dollars.` : quote.key === "gitlawb" ? "Buyers pay with GITLAWB; fees are paid in GITLAWB, or burned." : quote.key === "stock" ? (CHAIN_COPY[chain].stock?.pays ?? "") : "Buyers pay with ETH."}
               </span>
               {cfg.quotes.some((q) => q.key === "gitlawb") && quote.key !== "gitlawb" ? (
                 <button type="button" onClick={() => { setQuoteKey("gitlawb"); setMcapPick(null); setCustomMcap(""); }} className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-ink" title="Pair with GITLAWB and your token carries the GITLAWB badge everywhere on the site">
@@ -458,7 +503,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                 {quote.usd ? <span className="font-mono text-xs opacity-80">{fmtUsd(quote.usd)}</span> : <span className="font-mono text-xs opacity-60">price unavailable</span>}
               </span>
               <p className={helper}>
-                Your token carries the <GitlawbBadge /> badge on the launch list, trending, the activity feed, its page and its share card. GITLAWB is Gitlawb&apos;s token{chain === "robinhood" ? ", bridged 1:1 from Base to Robinhood Chain over LayerZero" : " on Base"}: an ordinary ERC-20, no transfer restrictions, no issuer switch. Name no beneficiary and every trading fee burns GITLAWB. Price from the Uniswap v4 WETH/GITLAWB pool on Base.{" "}
+                Your token carries the <GitlawbBadge /> badge on the launch list, trending, the activity feed, its page and its share card. GITLAWB is Gitlawb&apos;s token{CHAIN_COPY[chain].gitlawbOrigin}: an ordinary ERC-20, no transfer restrictions, no issuer switch. Name no beneficiary and every trading fee burns GITLAWB. Price from the Uniswap v4 WETH/GITLAWB pool on Base.{" "}
                 <a href={GITLAWB_SITE} target="_blank" rel="noreferrer" className="underline decoration-line underline-offset-2 hover:text-ink">gitlawb.com ↗</a>
               </p>
             </div>
@@ -473,7 +518,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       <img src={stock.logo} alt="" width={22} height={22} className={`${stock.logo.startsWith("data:") ? "rounded-md" : "rounded-full"} bg-card`} referrerPolicy="no-referrer" />
                     ) : null}
                     {stock.symbol}
-                    <span className="font-normal text-xs opacity-80">{chain === "base" ? "Coinbase stock" : "Robinhood stock"}</span>
+                    <span className="font-normal text-xs opacity-80">{CHAIN_COPY[chain].stock?.badge}</span>
                     <span className="font-normal text-xs opacity-80">{stock.name}</span>
                     {stock.usd ? <span className="font-mono text-xs opacity-80">{fmtUsd(stock.usd)}</span> : null}
                     <button
@@ -530,10 +575,10 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
                       </button>
                     </li>
                   ))}
-                  {stockHits.length === 0 ? <li className="text-xs text-muted">{chain === "base" ? "No match. 13 Coinbase tokenized stocks are available on Base: NVDAc, AAPLc, TSLAc, METAc, GOOGLc, AMZNc, MSFTc, MSTRc, COINc, CRCLc, INTCc, SNDKc, SPCXc." : "No match. 194 Robinhood Stock Tokens are available, e.g. AAPL, TSLA, NVDA, SPY."}</li> : null}
+                  {stockHits.length === 0 ? <li className="text-xs text-muted">{CHAIN_COPY[chain].stock?.empty}</li> : null}
                 </ul>
               ) : null}
-              <p className={helper}>{stockIssuerDisclaimer(chain)}</p>
+              <p className={helper}>{CHAIN_COPY[chain].stock?.issuer}</p>
             </div>
           ) : null}
         </section>
@@ -552,7 +597,30 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
               <label className={label} htmlFor="symbol">
                 Symbol
               </label>
-              <input id="symbol" className={`${input} font-mono uppercase`} value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} placeholder="SKY" maxLength={10} autoComplete="off" />
+              <input
+                id="symbol"
+                className={`${input} font-mono`}
+                value={symbol}
+                onChange={(e) => {
+                  // Rewriting an in-progress IME composition breaks the candidate window: keep it verbatim until it ends.
+                  setSymbol((e.nativeEvent as InputEvent).isComposing ? e.target.value : uppercaseInPlace(e.target));
+                }}
+                onCompositionEnd={(e) => setSymbol(uppercaseInPlace(e.currentTarget))}
+                onKeyDown={(e) => {
+                  // Some IMEs end composition before the confirming Enter keydown.
+                  if (e.key === "Enter" && (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229)) e.preventDefault();
+                }}
+                placeholder="SKY"
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby="symbol-help"
+                aria-invalid={Boolean(symbol) && !/^[A-Z0-9]{1,10}$/.test(symbolClean)}
+              />
+              <p id="symbol-help" className={`${helper} mt-2`}>
+                1–10 English letters (A–Z) or digits (0–9), published in uppercase. Your token name can use other languages.
+              </p>
             </div>
           </div>
           <div>
@@ -629,67 +697,56 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
         </section>
 
         {/* fees */}
-        <section className={`${card} p-5 space-y-4`}>
-          <div className="flex items-baseline justify-between gap-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-ink">Trading fee</h2>
-            <span className="text-xs text-up font-medium">Platform fee: 0, always</span>
-          </div>
-          <div className="grid sm:grid-cols-3 gap-2">
-            {FEE_PRESETS.map((f) => {
-              const active = feePips === f.pips;
+        <LaunchFeeSettings
+          feePips={feePips}
+          beneficiary={beneficiary}
+          address={address}
+          split={split}
+          onFeeChange={setFeePips}
+          onBeneficiaryChange={setBeneficiary}
+        >
+          <div className="space-y-2">
+            {rows.map((r, i) => {
+              const burn = isBurnAddress(r.payout);
               return (
-                <button
-                  type="button"
-                  key={f.pips}
-                  onClick={() => {
-                    setFeePips(f.pips);
-                    if (f.pips === 0) setBeneficiary("burn");
-                  }}
-                  className={`text-left rounded-xl border p-3.5 transition-colors ${active ? "border-brand bg-brand-soft" : "border-line-strong bg-card hover:border-ink/40"}`}
-                  aria-pressed={active}
-                >
-                  <div className={`font-mono font-bold text-lg tnum ${active ? "text-brand" : "text-ink"}`}>{f.label}</div>
-                  <div className="text-xs text-body mt-0.5 leading-snug">{f.blurb}</div>
-                </button>
+                <div key={i} className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <input className={`${input} font-mono ${burn ? "pr-20" : ""}`} value={r.payout} onChange={(e) => setRow(i, { payout: e.target.value.trim() })} placeholder="0x…" aria-label={`beneficiary ${i + 1} address`} autoComplete="off" spellCheck={false} />
+                    {burn ? <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-warm/30 bg-warm-soft px-2 h-6 inline-flex items-center text-[11px] font-medium text-warm-ink pointer-events-none">burned</span> : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative w-28 shrink-0">
+                      <input className={`${input} font-mono tnum pr-8`} value={r.pct} onChange={(e) => setRow(i, { pct: e.target.value.trim() })} placeholder="0" inputMode="decimal" aria-label={`beneficiary ${i + 1} share, percent`} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted pointer-events-none" aria-hidden>%</span>
+                    </div>
+                    <button type="button" className={`${btn.icon} h-12 w-12 shrink-0`} onClick={() => removeRow(i)} aria-label={`remove beneficiary ${i + 1}`} disabled={rows.length === 1 && !r.payout && !r.pct}>
+                      ×
+                    </button>
+                  </div>
+                </div>
               );
             })}
-          </div>
-
-          {feePips > 0 ? (
-            <div className="space-y-3 pt-1">
-              <p className={label}>Who receives the fee?</p>
-              <div className="grid sm:grid-cols-3 gap-2">
-                {(
-                  [
-                    { k: "burn", t: "Burn it", d: "No beneficiary. Every fee is sent to 0x…dEaD at collect time." },
-                    { k: "me", t: "Me", d: address ? shortAddr(address) : "The connected wallet." },
-                    { k: "custom", t: "Someone else", d: "Any address: a friend, a charity, a DAO." },
-                  ] as { k: Beneficiary; t: string; d: string }[]
-                ).map((o) => {
-                  const active = beneficiary === o.k;
-                  return (
-                    <button
-                      type="button"
-                      key={o.k}
-                      onClick={() => setBeneficiary(o.k)}
-                      className={`text-left rounded-xl border p-3.5 transition-colors ${active ? "border-brand bg-brand-soft" : "border-line-strong bg-card hover:border-ink/40"}`}
-                      aria-pressed={active}
-                    >
-                      <div className={`font-semibold text-sm ${active ? "text-brand" : "text-ink"}`}>{o.t}</div>
-                      <div className="text-xs text-body mt-0.5 leading-snug">{o.d}</div>
-                    </button>
-                  );
-                })}
-              </div>
-              {beneficiary === "custom" ? (
-                <input className={`${input} font-mono`} value={customAddr} onChange={(e) => setCustomAddr(e.target.value.trim())} placeholder="0x…" aria-label="beneficiary address" />
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className={btn.secondarySm} onClick={() => addRow()} disabled={rows.length >= MAX_RECIPIENTS}>
+                + Add address
+              </button>
+              {address && !hasRow(address) ? (
+                <button type="button" className={btn.secondarySm} onClick={() => quickAdd(address)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
+                  + Me ({shortAddr(address)})
+                </button>
               ) : null}
-              <p className={helper}>Fixed forever at launch. Not even you can change it later. That&apos;s the point.</p>
+              {!hasRow(DEAD) ? (
+                <button type="button" className={btn.secondarySm} onClick={() => quickAdd(DEAD)} disabled={rows.length >= MAX_RECIPIENTS && rows.every((x) => x.payout.trim() !== "")}>
+                  + Burn a share
+                </button>
+              ) : null}
+              <span className={`ml-auto text-xs tnum ${split.remainingBps === 0 ? "text-up" : "text-warm-ink"}`}>
+                {split.remainingBps === 0 ? "Shares add up to 100%" : split.remainingBps > 0 ? `${bpsToPct(split.remainingBps)}% left to assign` : `${bpsToPct(-split.remainingBps)}% over`}
+              </span>
             </div>
-          ) : (
-            <p className={helper}>A 0% pool: trades cost only Uniswap gas. Nobody, including you, earns from volume.</p>
-          )}
-        </section>
+            <p className={helper}>Shares in percent, up to two decimals, must total exactly 100%. A row with 0x…dEaD burns that share.</p>
+          </div>
+        </LaunchFeeSettings>
 
         {/* submit */}
         <section className={`${card} p-5 space-y-4`}>
@@ -731,14 +788,14 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
           </div>
           {buyPreview ? (
             <p className="text-sm text-body">
-              Estimated buy: about <span className="font-mono font-bold text-ink tnum">{fmtCompact(buyPreview.tokensOut, 0)}</span> {symbolClean || "tokens"}{" "}
+              Estimated buy: about <span className="font-mono font-bold text-ink tnum">{fmtCompact(buyPreview.tokensOut, 0)}</span> <span className="break-all">{symbolClean || "tokens"}</span>{" "}
               <span className="font-mono text-muted tnum">({fmtPct(buyPreview.pctOfSupply)} of supply{buyUsd ? ` · ≈ ${fmtUsd(buyUsd)}` : ""})</span>. Estimated market cap after your buy:{" "}
               <span className="font-mono font-bold text-ink tnum">{cap(buyPreview.fdvAfter).main}</span><span className="font-mono text-muted tnum"> · {cap(buyPreview.fdvAfter).detail}</span>. Includes price impact and the pool fee; the exact amount is quoted on-chain right before the buy.
             </p>
           ) : suggestion.reason === "insufficient" ? (
-            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet holds only gas. The launch stays free; you can buy on the token page later.</p>
+            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet {sharedGas ? `does not hold enough ${quote.symbol} for the buy plus its gas` : "holds only gas"}. The launch stays free; you can buy on the token page later.</p>
           ) : suggestion.reason === "no-gas" ? (
-            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet has no ETH left for the buy&apos;s gas. The launch stays free; you can buy on the token page later.</p>
+            <p className={helper}>Suggested {fmtQuoteUnits(Number(defaultFirstBuy(quote)), quote.decimals)} {quote.symbol}, but this wallet has no {NATIVE_SYMBOL} left for the buy&apos;s gas. The launch stays free; you can buy on the token page later.</p>
           ) : suggestion.reason === "unknown-balance" ? (
             <p className={helper}>Could not read your balance, so nothing is suggested. The launch stays free; you can still type an amount.</p>
           ) : suggestion.reason === "declined" && !typedBuy ? (
@@ -791,18 +848,18 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             <TokenAvatar chain={chain} token={`0x${symbolClean || "token"}`} symbol={symbolClean || "?"} image={/^https:\/\//.test(image.trim()) ? image.trim() : null} size={48} />
             <div className="min-w-0">
               <div className="font-semibold text-ink truncate">{name.trim() || "Your token"}</div>
-              <div className="font-mono text-xs text-muted">{symbolClean || "TICKER"}</div>
+              <div className="font-mono text-xs text-muted truncate">{symbolClean || "TICKER"}</div>
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               {quote.key === "gitlawb" ? <GitlawbBadge size="md" /> : null}
-              <FeeChip lpFee={feePips} mode={feePips === 0 ? "free" : beneficiary === "burn" ? "burn" : "creator"} />
+              <FeeChip lpFee={feePips} mode={feeMode} />
             </div>
           </div>
           {description.trim() ? <p className="mt-3 text-sm text-body line-clamp-3">{description.trim()}</p> : null}
           <dl className="mt-4 grid grid-cols-2 gap-2">
             <Mini k="Opens at" v={fdvPreview !== null ? cap(fdvPreview).main : "—"} sub={fdvPreview !== null ? cap(fdvPreview).detail : CHAIN_LABELS[chain]} />
             <Mini k="First buy" v={initialBuyRaw ? `${initialBuy.trim()} ${quote.symbol}` : "none"} sub={buyPreview ? `${buySource === "suggested" ? "suggested · " : ""}~${fmtPct(buyPreview.pctOfSupply)} of supply` : "pool opens untouched"} />
-            <Mini k="Trading fee" v={FEE_PRESETS.find((f) => f.pips === feePips)?.label ?? "—"} sub={feePips === 0 ? "free pool" : beneficiary === "burn" ? "burned" : "to beneficiary"} />
+            <Mini k="Trading fee" v={FEE_PRESETS.find((f) => f.pips === feePips)?.label ?? "—"} sub={feeRouteSub} />
             <Mini k="Platform fee" v="0" sub="always" accent />
           </dl>
         </div>
@@ -811,7 +868,7 @@ export default function LaunchForm({ ethUsd, gitlawbUsd = null, initialChain = "
             ["Deploys a plain ERC-20", "no mint, no pause, no blacklist, no tax"],
             ["Opens a Uniswap v4 pool", `${quote.symbol} / your token on ${CHAIN_LABELS[chain]}, no hook`],
             ["Locks 100% of supply as liquidity", "the position NFT lives in an ownerless locker, forever"],
-            ["Routes trading fees", feePips === 0 ? "nothing to route at 0%" : beneficiary === "burn" ? "burned at collect time" : "100% to the beneficiary, claimable any time"],
+            ["Routes trading fees", feePips === 0 ? "nothing to route at 0%" : feeMode === "burn" ? "burned at collect time" : recipients.length === 0 ? "to the beneficiaries you name, claimable any time" : `${describeShares(recipients, shortAddr)}, claimable any time`],
             ...(initialBuyRaw ? [["Buys your first tokens", `${initialBuy.trim()} ${quote.symbol} right after the launch confirms, with a second wallet prompt`]] : []),
           ].map(([t, d]) => (
             <li key={t} className="flex gap-2.5">

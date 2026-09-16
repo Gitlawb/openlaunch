@@ -4,7 +4,11 @@
  * ONLY when a database is configured but unreachable. Indexer lag / errors are
  * reported as ok:false + alerts[] but still 200 (a stale list ≠ a down site).
  */
+import { DEFAULT_CHAIN } from "./chainKeys.ts";
+
 export type SyncHealthInput = { chain?: string; cursor_block: number | null; head_block: number | null; last_run_at: string | null; last_error: string | null };
+/** The lag limit per chain (block times differ), or one number for every chain. */
+export type LagAlertBlocks = number | ((chain: string) => number);
 
 export type HealthInput = {
   dbConfigured: boolean;
@@ -14,7 +18,7 @@ export type HealthInput = {
   sync?: SyncHealthInput | null;
   /** additional chains (first one goes in `sync` for backwards compatibility) */
   chains?: SyncHealthInput[];
-  lagAlertBlocks?: number;
+  lagAlertBlocks?: LagAlertBlocks;
 };
 
 export type HealthBody = {
@@ -41,16 +45,16 @@ export function blockNumber(v: bigint | number | null | undefined): number | nul
 }
 
 export function healthBody(i: HealthInput): { status: number; body: HealthBody } {
-  const lagLimit = i.lagAlertBlocks ?? DEFAULT_LAG_ALERT_BLOCKS;
+  const lagLimitFor = (chain: string) => (typeof i.lagAlertBlocks === "function" ? i.lagAlertBlocks(chain) : (i.lagAlertBlocks ?? DEFAULT_LAG_ALERT_BLOCKS));
   const s = i.sync ?? { cursor_block: null, head_block: null, last_run_at: null, last_error: null };
   const lag = lagBlocks(s.head_block, s.cursor_block);
   const alerts: string[] = [];
   if (i.dbConfigured && !i.dbOk) alerts.push("db_unreachable");
   const all = i.chains ?? (i.sync ? [i.sync] : []);
-  const chains = all.map((c) => ({ chain: c.chain ?? "base", cursor_block: c.cursor_block, head_block: c.head_block, lag_blocks: lagBlocks(c.head_block, c.cursor_block), last_error: c.last_error }));
+  const chains = all.map((c) => ({ chain: c.chain ?? DEFAULT_CHAIN, cursor_block: c.cursor_block, head_block: c.head_block, lag_blocks: lagBlocks(c.head_block, c.cursor_block), last_error: c.last_error }));
   if (i.dbConfigured && i.dbOk && i.launchpad) {
     for (const c of chains) {
-      if (c.lag_blocks !== null && c.lag_blocks > lagLimit && !alerts.includes("sync_lag")) alerts.push("sync_lag");
+      if (c.lag_blocks !== null && c.lag_blocks > lagLimitFor(c.chain) && !alerts.includes("sync_lag")) alerts.push("sync_lag");
       if (c.last_error && !alerts.includes("sync_error")) alerts.push("sync_error");
     }
   }

@@ -192,6 +192,48 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 }
 
 /* transaction toasts */
+.bb-toast-region {
+  position: fixed;
+  z-index: 50;
+  inset-inline: 12px;
+  top: calc(4.25rem + env(safe-area-inset-top, 0px));
+  pointer-events: none;
+}
+.bb-toast-card {
+  --toast-accent: var(--color-brand);
+  --toast-tint: var(--color-brand-soft);
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: auto;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 16px;
+  background: var(--color-card);
+  box-shadow: var(--shadow-dialog), 0 2px 6px color-mix(in srgb, var(--color-ink) 6%, transparent);
+}
+.bb-toast-card[data-kind="buy"], .bb-toast-card[data-kind="collect"] { --toast-accent: var(--color-up); --toast-tint: var(--color-up-soft); }
+.bb-toast-card[data-kind="sell"] { --toast-accent: var(--color-down); --toast-tint: var(--color-down-soft); }
+.bb-toast-content { display: block; padding: 16px; border-radius: inherit; }
+.bb-toast-body { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding-right: 28px; }
+.bb-toast-identity { display: grid; place-items: center; align-self: start; width: 40px; height: 40px; border-radius: 12px; background: var(--toast-tint); color: var(--toast-accent); }
+.bb-toast-title { color: var(--color-ink); font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.bb-toast-description { margin-top: 4px; color: var(--color-body); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.bb-toast-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 14px; font-size: 11px; line-height: 1.5; }
+.bb-toast-status { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--toast-accent); }
+.bb-toast-chain { color: var(--color-muted); }
+.bb-toast-destination { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--color-ink); font-weight: 500; transition: color 160ms ease; }
+.bb-toast-content:hover .bb-toast-destination { color: var(--toast-accent); }
+.bb-toast-dismiss { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--color-muted); cursor: pointer; transition: color 160ms ease, background-color 160ms ease, transform 160ms ease; }
+.bb-toast-dismiss:hover { color: var(--color-ink); background: var(--color-paper); }
+.bb-toast-dismiss:active { transform: scale(.94); }
+.bb-toast-content:focus-visible, .bb-toast-dismiss:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -3px; }
+.bb-toast-queued { padding: 7px 16px 9px; border-top: 1px solid var(--color-line); color: var(--color-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.bb-toast-timer { position: absolute; inset-inline: 0; bottom: 0; height: 2px; background: var(--color-line); }
+.bb-toast-progress { display: block; height: 100%; background: var(--toast-accent); transform-origin: left; animation-name: bb-toast-lifetime; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes bb-toast-lifetime { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (min-width: 640px) {
+  .bb-toast-region { inset-inline: auto 24px; top: auto; bottom: 24px; width: 384px; }
+}
 @keyframes bb-toast-in {
   from { transform: translateY(12px) scale(0.98); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
@@ -200,7 +242,7 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   from { transform: translateY(0); opacity: 1; }
   to { transform: translateY(8px); opacity: 0; }
 }
-.bb-toast-in { animation: bb-toast-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) 1; }
+.bb-toast-in { animation: bb-toast-in 300ms cubic-bezier(0.16, 1, 0.3, 1) 1; }
 .bb-toast-out { animation: bb-toast-out 320ms ease-in 1 forwards; }
 
 /* one-shot confetti burst (own tx confirmed) */
@@ -216,6 +258,10 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 @media (prefers-reduced-motion: reduce) {
   .bb-toast-in, .bb-toast-out, .bb-confetti, .bb-pop { animation: none; }
   .bb-confetti { display: none; }
+  .bb-toast-timer { display: none; }
+  .bb-toast-progress { animation: none; }
+  .bb-toast-dismiss, .bb-toast-destination { transition: none; }
+  .bb-toast-dismiss:active { transform: none; }
 }
 
 /* live list highlights */

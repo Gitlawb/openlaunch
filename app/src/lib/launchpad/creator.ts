@@ -15,6 +15,26 @@ export function earnedRaw(collectedQuote: bigint | string, burnedQuote: bigint |
   return (paid * BigInt(shareBps)) / 10_000n;
 }
 
+/**
+ * Fees in both pool currencies (raw units). Every collect pays beneficiaries the
+ * quote side (buy fees) and the launched token side (sell fees) of the pool.
+ */
+export type FeeSides = { quote: bigint; token: bigint };
+
+/** This wallet's paid share on both sides, from the indexed collected/burned totals. */
+export function earnedSides(
+  l: { fees_quote_collected: string; fees_quote_burned: string; fees_token_collected: string; fees_token_burned: string },
+  shareBps: number,
+): FeeSides {
+  return { quote: earnedRaw(l.fees_quote_collected, l.fees_quote_burned, shareBps), token: earnedRaw(l.fees_token_collected, l.fees_token_burned, shareBps) };
+}
+
+/** USD value of a fee pair: token side priced at the pool price (whole quote per token, 18-decimal token). Null without a quote USD price. */
+export function feeSidesUsd(sides: FeeSides, quoteDecimals: number, priceQuote: number, quoteUsd: number | null): number | null {
+  if (quoteUsd === null) return null;
+  return (Number(sides.quote) / 10 ** quoteDecimals + (Number(sides.token) / 1e18) * priceQuote) * quoteUsd;
+}
+
 /** Whether a launch burns everything (no beneficiary). */
 export function isBurnOnly(recipients: Recipient[]): boolean {
   return recipients.length === 1 && recipients[0].payout.toLowerCase() === DEAD;
@@ -24,4 +44,9 @@ export function isBurnOnly(recipients: Recipient[]): boolean {
 export function holdingUsd(balanceWei: bigint | string, priceQuote: number, quoteUsd: number | null): number | null {
   if (quoteUsd === null) return null;
   return (Number(BigInt(balanceWei)) / 1e18) * priceQuote * quoteUsd;
+}
+
+/** Whether a fee pair holds anything on either side. */
+export function hasFees(sides: FeeSides | null | undefined): sides is FeeSides {
+  return Boolean(sides && (sides.quote > 0n || sides.token > 0n));
 }

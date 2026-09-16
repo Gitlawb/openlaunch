@@ -18,7 +18,7 @@ export default function LaunchHero({ configured }: { ethUsd?: number | null; con
           <h1 className="font-display font-bold leading-[1.02] tracking-[-0.04em] text-ink text-[40px] min-[400px]:text-5xl sm:text-6xl lg:text-[48px] xl:text-[56px]">
             Launch a token.
             <br />
-            <span className="text-brand">Free.</span> On Base or Robinhood.
+            <span className="text-brand">Free.</span> On Base, Robinhood or Arc.
           </h1>
           <p className="mt-6 text-base sm:text-lg text-body max-w-[32rem] leading-relaxed text-pretty">
             One transaction. Your token, a Uniswap v4 pool, and a liquidity position locked forever. 100% of the supply goes into the pool at launch. We take nothing. You only pay gas.

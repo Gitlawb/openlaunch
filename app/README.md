@@ -1,6 +1,6 @@
 # openlaunch.lol — app
 
-**Launch a token. Free. Open source. On Base or Robinhood Chain.**
+**Launch a token. Free. Open source. On Base, Robinhood Chain or Arc.**
 
 The site for the [openlaunch](../README.md) launchpad. One transaction deploys a fixed-supply ERC-20,
 opens a Uniswap v4 pool and locks 100% of the supply as liquidity in an ownerless locker — forever.
@@ -30,6 +30,8 @@ Next 16 app router, React 19, Tailwind 4, wagmi 3 + viem 2, Postgres (postgres.j
 Token pages prefer GeckoTerminal’s hosted advanced chart. The lookup validates the
 exact chain, Uniswap v4 pool ID, launched base token and quote. Reversed listings
 are not used, because the embed would chart the quote asset instead of the token.
+Base, Robinhood and Arc use their own provider network IDs. Arc pools retain the
+factory's USDC ERC-20 quote identity; native USDC is not substituted for it.
 
 Unlisted, unpriced or temporarily unavailable pools fall back to Openlaunch’s own
 indexed candles. **On-chain** is also available manually if a provider frame is
@@ -64,8 +66,9 @@ CSP allows only `https://www.geckoterminal.com` as a frame origin on all entry
 pages, preserving client navigation. It does not allow provider scripts or
 connections in the parent page; `frame-ancestors` remains `none`.
 
-The development-only `/ui-review-charts` exercises seven real pool identities
-without a local database. Its allowlisted candle proxy reads the public production
+The development-only `/ui-review-charts` exercises eight real pool identities,
+including an Arc USDC-quoted pool, without a local database. Its allowlisted candle
+proxy reads the public production
 API without forwarding wallets, cookies or credentials. Both preview endpoints
 return 404 in production. See its [test notes](src/app/ui-review-charts/README.md).
 

@@ -71,8 +71,11 @@
 .networks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .networkButton { display: flex; min-width: 0; align-items: center; gap: 7px; min-height: 44px; padding: 8px; border: 1px solid var(--color-line); border-radius: 10px; color: var(--color-body); font-size: 12px; font-weight: 500; cursor: pointer; }
 .networkButton:hover, .networkButton[aria-pressed="true"] { border-color: var(--color-line-strong); color: var(--color-ink); background: var(--color-card); }
-.networkGlyph { display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--color-brand-soft); color: var(--color-brand); font: 700 10px var(--font-mono); }
-.robinhood { background: var(--color-up-soft); color: var(--color-up); }
+.networkLogo { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; }
+.networkLogo img { display: block; flex-shrink: 0; object-fit: contain; }
+.networkLogo .darkLogo { display: none; }
+:global(.dark) .networkLogo .lightLogo { display: none; }
+:global(.dark) .networkLogo .darkLogo { display: block; }
 .networkCheck { margin-left: auto; color: var(--color-ink); flex-shrink: 0; }
 .pendingDot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-muted); margin-left: auto; }
 .networkNote, .unsupported { margin-top: 10px; color: var(--color-muted); font-size: 11px; line-height: 1.6; }

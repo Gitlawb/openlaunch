@@ -67,10 +67,10 @@ export function parseRoundData(hex: string): { answer: bigint; updatedAt: number
   return { answer, updatedAt: Number(word(3)) };
 }
 
-/** USD per token from a feed reading; null when non-positive or older than the trust window. */
+/** USD per token from a feed reading; null when non-positive, from the future, or older than the trust window. */
 export function feedUsd(r: { answer: bigint; updatedAt: number } | null, nowS: number, feedDecimals = 8, maxAgeS = BASE_STOCK_MAX_FEED_AGE_S): number | null {
   if (!r || r.answer <= 0n) return null;
-  if (!(r.updatedAt > 0) || nowS - r.updatedAt > maxAgeS) return null;
+  if (!(r.updatedAt > 0) || r.updatedAt > nowS || nowS - r.updatedAt > maxAgeS) return null;
   return Number(r.answer) / 10 ** feedDecimals;
 }
 

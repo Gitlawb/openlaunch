@@ -13,6 +13,7 @@ their existing trade panel, token data and conversations.
 | --- | --- |
 | solv | Actively traded Base pool, primary advanced chart |
 | rfly | Actively traded Robinhood pool |
+| ocat | Arc USDC-quoted pool; exact Gecko identity and USD pricing verified September 16, 2026 |
 | sky | Sparse ETH-quoted history |
 | quiver | Stock quote, sparse history |
 | unpriced | GITLAWB quote with trades but no Gecko USD price |
@@ -33,6 +34,8 @@ wallet addresses or cookies are sent. Both this page and its candle proxy return
   must not disable trading or claim the token has no trades.
 - Inspect unpriced and reversed examples: quote symbols and token orientation must
   stay correct. An unavailable USD conversion must not become a fake dollar price.
+- Check the Arc preset: its quote is the 6-decimal USDC ERC-20 at `0x3600…0000`,
+  not the native zero-address asset. **On-chain** must keep USDC as its quote unit.
 - Verify **No trades yet**, sparse ranges and native chart refresh.
 - Check 400px mobile, 720px workspace and 1440px desktop widths, with no page-level
   horizontal overflow. Provider controls are responsive and may collapse.
@@ -45,6 +48,8 @@ every chart has candles; **On-chain** remains the escape hatch. Reloads, theme a
 source changes can reset drawings. No CSS filters, overlays, clipping or hidden
 branding are applied.
 
+The September 13 audit covered Base and Robinhood, before Arc was added. The
+Arc preset was verified separately; it is not a full Arc-pool coverage audit.
 The saved audit checked 1,012 pool identities, not every candle or every rendered
 iframe. 988 had exact orientation; 314 of those had a positive USD price, while
 674 did not. Seven listings were reversed and 17 were absent. These are

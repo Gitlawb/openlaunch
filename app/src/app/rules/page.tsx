@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "How it works", description: "What a 
 
 const STEPS = [
   { title: "Your token is deployed", description: "A plain ERC-20 with EIP-2612 permit. Fixed supply, 1 billion by default. No mint, no pause, no blacklist, no transfer tax, no owner.", value: "1B", label: "default supply" },
-  { title: "A market opens", description: "A Uniswap v4 pool pairs your token with ETH, GITLAWB, a tokenized stock (Coinbase stocks on Base, Robinhood Stock Tokens on Robinhood Chain), or USDG on Robinhood Chain. No hook. The pool starts at the market cap you pick.", value: "v4", label: "Uniswap pool" },
+  { title: "A market opens", description: "A Uniswap v4 pool pairs your token with ETH, GITLAWB, a tokenized stock (Coinbase stocks on Base, Robinhood Stock Tokens on Robinhood Chain), USDG on Robinhood Chain, or USDC on Arc. No hook. The pool starts at the market cap you pick.", value: "v4", label: "Uniswap pool" },
   { title: "The liquidity position is locked", description: "100% of the supply goes into one single-sided position at launch. Its NFT is minted to an ownerless locker that has no function to withdraw, transfer or shrink it. Ever.", value: "100%", label: "deposited at launch" },
   { title: "Fee routing is written in", description: "The trading fee you choose (0%, 1% or 3%) goes 100% to the beneficiaries you name, or is burned if you name none. Fixed at launch, unchangeable.", value: "0 / 1 / 3%", label: "your trading fee" },
 ] as const;
@@ -39,12 +39,16 @@ const VERIFIERS: Record<(typeof CHAIN_KEYS)[number], { name: string; url: (addr:
     { name: "Blockscout", url: (a) => `https://robinhoodchain.blockscout.com/address/${a}?tab=contract` },
     { name: "Sourcify", url: (a) => `https://repo.sourcify.dev/4663/${a}` },
   ],
+  arc: [
+    { name: "Arc Explorer", url: (a) => `https://explorer.arc.io/address/${a}?tab=contract` },
+    { name: "Sourcify", url: (a) => `https://repo.sourcify.dev/5042/${a}` },
+  ],
 };
 
 export default function RulesPage() {
   return (
     <main className={`${shell.page} ${styles.guide}`}>
-      <SectionIntro eyebrow="The protocol, explained" title="How it works" description="One transaction on Base or Robinhood Chain. Your token, a market, and a permanently locked liquidity position. You only pay gas.">
+      <SectionIntro eyebrow="The protocol, explained" title="How it works" description="One transaction on Base, Robinhood Chain or Arc. Your token, a market, and a permanently locked liquidity position. You only pay gas.">
         <Link href="/launch" className={shell.action}>Launch a token <ArrowRight size={15} aria-hidden="true" /></Link>
         <a href="#contracts" className={shell.textLink}>Verify the contracts <ArrowDown size={14} aria-hidden="true" /></a>
       </SectionIntro>
@@ -116,7 +120,7 @@ export default function RulesPage() {
 
           <section className={shell.anchorSection} id="contracts" aria-labelledby="contracts-heading">
             <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>05 / The source of truth</p><h2 id="contracts-heading">Don&apos;t take our word for it.</h2></div><FileCode2 size={28} className={styles.contractIcon} aria-hidden="true" /></div>
-            <p className={styles.contractIntro}>Contracts, addresses and source verification. The same contract design on both chains, with chain-specific Uniswap deployments.</p>
+            <p className={styles.contractIntro}>Contracts, addresses and source verification. The same contract design on every chain, with chain-specific Uniswap deployments.</p>
             <div className={styles.registry}>
               {CHAIN_KEYS.map((chain) => {
                 const config = launchpad(chain);

@@ -11,3 +11,9 @@ solc_version = "0.8.26"
 evm_version = "cancun"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Arc (chain 5042) executes under Arc rules only with Circle's arc-foundry (github.com/circlefin/arc-foundry): upstream forge cannot
+# run Arc's USDC transfers (OpcodeNotFound) and would mis-report Arc tests. Forking an Arc RPC auto-selects Arc mode; this
+# profile is for local (non-fork) Arc runs:  FOUNDRY_PROFILE=arc arc-forge test
+[profile.arc]
+network = "arc"

@@ -1,15 +1,14 @@
 import "server-only";
 import { createPublicClient, fallback, http, type PublicClient } from "viem";
-import { CHAINS, type ChainKey } from "./chainPublic";
+import { CHAINS, RPC_ENV_NAME, type ChainKey } from "./chainPublic";
 
 export * from "./chainPublic";
 
-/** SERVER chain access. BASE_RPC_URL / ROBINHOOD_RPC_URL override the chains' public RPCs. */
+/** SERVER chain access. BASE_RPC_URL / ROBINHOOD_RPC_URL / ARC_RPC_URL (Alchemy etc.) override the chains' public RPCs. */
 const cached = new Map<ChainKey, PublicClient>();
 
 export function rpcUrl(key: ChainKey): string | undefined {
-  const v = key === "base" ? process.env.BASE_RPC_URL : process.env.ROBINHOOD_RPC_URL;
-  return v?.trim() || undefined;
+  return process.env[RPC_ENV_NAME[key]]?.trim() || undefined;
 }
 
 /**

@@ -54,7 +54,7 @@ test("fee collection and full signed metadata editing keep their existing transa
   assert.match(source, /wallet\.writeContract\(request\)/);
   assert.match(source, /waitForTransactionReceipt\(\{ hash \}\)/);
   assert.match(source, /\/api\/launch\/sync\?chain=\$\{l\.chain\}&tx=\$\{hash\}/);
-  assert.match(source, /if \(p && p > 0n\) await collect\(l\)/);
+  assert.match(source, /if \(hasFees\(pending\[key\(l\)\]\)\) await collect\(l\)/);
   assert.match(source, /<EditTokenSheet/);
   for (const field of ["description", "image_url", "website", "x_handle"]) {
     assert.ok(source.includes(`${field}: editing.${field}`));
@@ -76,4 +76,16 @@ test("dashboard controls, tables and responsive styling remain accessible and th
   assert.doesNotMatch(css, /gradient\(|box-shadow|text-shadow|#[\da-f]{3,8}\b|animation:/i);
   assert.doesNotMatch(css, /background(?:-color)?: var\(--color-brand\)/);
   assert.doesNotMatch(source + css + page, /font-display/);
+});
+
+test("dashboard fees cover both pool sides: quote and the launched token", () => {
+  // collect() returns (quoteOut, tokenOut); a sells-only pool must still count as collectable.
+  assert.match(source, /p\[key\(l\)\] = \{ quote: result\[0\], token: result\[1\] \}/);
+  assert.match(source, /filter\(\(l\) => hasFees\(pending\[key\(l\)\]\)\)/);
+  assert.match(source, /disabled=\{busy !== null \|\| !hasFees\(p\)\}/);
+  // earned (total and per row) prices the token share too, and marks it as an estimate
+  assert.match(source, /feeSidesUsd\(earnedSides\(l, feeShareBps\(l\.recipients, address\)\), l\.quote_decimals, l\.price_quote, l\.quote_usd\)/);
+  assert.match(source, /earned\.token > 0n \? "≈ " : ""/);
+  assert.match(source, /fmtTokens\(p\.token\)/);
+  assert.doesNotMatch(source, /earnedRaw\(l\.fees_quote_collected/);
 });

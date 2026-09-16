@@ -3,13 +3,11 @@
  * callers pass `siteUrl` in so unit tests stay deterministic.
  */
 
-export type ChainKey = "base" | "robinhood";
+import { CHAIN_LABELS, isChainKey, type ChainKey } from "./chainKeys.ts";
+
+export { isChainKey, type ChainKey };
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-
-export function isChainKey(v: unknown): v is ChainKey {
-  return v === "base" || v === "robinhood";
-}
 
 export function isTokenAddress(v: unknown): boolean {
   return typeof v === "string" && ADDRESS_RE.test(v);
@@ -112,7 +110,7 @@ export type TokenJsonLdInput = {
  */
 export function tokenJsonLd(l: TokenJsonLdInput): Record<string, unknown> {
   const url = tokenCanonical(l.siteUrl, l.chain, l.token);
-  const chainLabel = l.chain === "base" ? "Base" : "Robinhood Chain";
+  const chainLabel = CHAIN_LABELS[l.chain];
   return {
     "@context": "https://schema.org",
     "@type": "WebPage",

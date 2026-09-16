@@ -10,7 +10,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/vendor/toggle-group";
 import { btn } from "@/components/ui";
 import type { LaunchRow as L, LaunchSort, VolumeWindow } from "@/lib/launchpad/queries";
 import { CHAIN_SHORT, type ChainKey } from "@/lib/chainPublic";
-import { FILTERS, isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit, type LaunchFilter } from "@/lib/launchpad/search";
+import { VISIBLE_CHAINS } from "@/lib/launchpad/config";
+import { FILTERS, filterOnChain, isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit, type LaunchFilter } from "@/lib/launchpad/search";
 import { launchKey, mergeLaunches, refreshInPlace } from "@/lib/launchpad/list-state";
 import { liveChip, liveTier } from "@/lib/launchpad/ranking";
 import { PAGE_SIZE } from "@/lib/launchpad/paging";
@@ -28,8 +29,7 @@ const SORTS: { key: LaunchSort; label: string }[] = [
 const WINDOWS: VolumeWindow[] = ["1h", "24h", "all"];
 const CHAIN_FILTERS: { key: ChainKey | null; label: string }[] = [
   { key: null, label: "All chains" },
-  { key: "base", label: CHAIN_SHORT.base },
-  { key: "robinhood", label: CHAIN_SHORT.robinhood },
+  ...VISIBLE_CHAINS.map((key) => ({ key, label: CHAIN_SHORT[key] })),
 ];
 const HL_NEW_MS = 60_000;
 const HL_TRADE_MS = 2_500;
@@ -223,7 +223,7 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
           <div>
             <div className="flex items-center gap-2.5">
               <h2 id="launches-heading" className="text-base font-semibold tracking-tight text-ink">Launches</h2>
-              <span className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted tnum" title="Total launches across both chains">{live.totals.launches}</span>
+              <span className="rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted tnum" title="Total launches across all chains">{live.totals.launches}</span>
             </div>
             <p className="mt-1 text-xs text-muted">{sort === "live" ? "Tokens with buyers first. Every launch stays in New." : "Every token. Open from the start."}</p>
           </div>
@@ -242,7 +242,7 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
       </div>
       <div className="space-y-3 border-t border-line px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <ToggleGroup aria-label="Chain" value={[chain ?? "all"]} onValueChange={(values) => { const value = values[0]; if (!value) return; const c = value === "all" ? null : (value as ChainKey); const keep = !filter || FILTERS.some((f) => f.key === filter && (!f.chain || !c || f.chain === c)); pick(sort, window_, c, keep ? filter : null); }}>
+          <ToggleGroup aria-label="Chain" value={[chain ?? "all"]} onValueChange={(values) => { const value = values[0]; if (!value) return; const c = value === "all" ? null : (value as ChainKey); const keep = !filter || FILTERS.some((f) => f.key === filter && filterOnChain(f, c)); pick(sort, window_, c, keep ? filter : null); }}>
             {CHAIN_FILTERS.map((c) => <ToggleGroupItem key={c.key ?? "all"} value={c.key ?? "all"}>{c.label}</ToggleGroupItem>)}
           </ToggleGroup>
           {showWindow ? <ToggleGroup aria-label="Volume window" value={[window_]} onValueChange={(values) => { if (values[0]) pick(sort, values[0] as VolumeWindow); }}>
@@ -252,12 +252,12 @@ export default function LaunchList({ initial, initialHasMore = false, initialSor
         <div className="flex items-start gap-2">
           <SlidersHorizontal aria-hidden="true" size={13} className="mt-3.5 shrink-0 text-muted" />
           <ToggleGroup aria-label="Quick filter" value={filter ? [filter] : []} onValueChange={(values) => pick(sort, window_, chain, (values[0] as LaunchFilter | undefined) ?? null)} className="min-w-0 gap-1 overflow-x-auto rounded-none border-0 bg-transparent p-0 bb-scroll">
-            {FILTERS.filter((f) => !f.chain || !chain || f.chain === chain).map((f) => <ToggleGroupItem key={f.key} value={f.key} title={f.title} className="min-h-10 px-2.5 text-[11px] data-pressed:bg-card">{f.label}</ToggleGroupItem>)}
+            {FILTERS.filter((f) => filterOnChain(f, chain)).map((f) => <ToggleGroupItem key={f.key} value={f.key} title={f.title} className="min-h-10 px-2.5 text-[11px] data-pressed:bg-card">{f.label}</ToggleGroupItem>)}
           </ToggleGroup>
         </div>
       </div>
       <div role="status" className="flex min-h-9 items-center justify-between gap-2 border-t border-line px-4 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-2">{updating || searching ? <><Spinner size={11} />{searching ? "Searching all launches…" : "Updating view…"}</> : nq ? <><span className="font-mono tnum">{shown.length}</span> matches</> : <><span className="font-mono tnum">{shown.length}</span> shown · {chain ? CHAIN_SHORT[chain] : "both chains"}</>}</span>
+        <span className="inline-flex items-center gap-2">{updating || searching ? <><Spinner size={11} />{searching ? "Searching all launches…" : "Updating view…"}</> : nq ? <><span className="font-mono tnum">{shown.length}</span> matches</> : <><span className="font-mono tnum">{shown.length}</span> shown · {chain ? CHAIN_SHORT[chain] : "all chains"}</>}</span>
         <span className="shrink-0">{holding ? "Order held while browsing" : "Updates every 5s"}</span>
       </div>
       <LaunchListHeader window={showWindow ? window_ : "all"} />

@@ -59,7 +59,8 @@ export default function LiveProvider({ initial, children }: { initial: Omit<Live
       if (data.launches && p && (data.sort !== p.sort || data.window !== p.window || (data.chain ?? null) !== p.chain || (data.filter ?? null) !== p.filter)) data.launches = null;
       // totals merge field-by-field: during a rolling deploy a poll can land on a machine that predates a newly added
       // total, and a missing field must fall back to the last value the client already had, never to undefined in render
-      const merged: Live = { ...data, totals: { ...last.current.totals, ...data.totals }, launches: data.launches ?? (p ? last.current.launches : null) };
+      // by_chain is merged one level deeper for the same reason: an older machine answers without a newly added chain
+      const merged: Live = { ...data, totals: { ...last.current.totals, ...data.totals, by_chain: { ...last.current.totals.by_chain, ...data.totals?.by_chain } }, launches: data.launches ?? (p ? last.current.launches : null) };
       last.current = merged;
       setLive(merged);
       listeners.current.forEach((fn) => fn(merged));

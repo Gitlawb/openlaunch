@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isChainKey } from "@/lib/chainPublic";
+import { visibleChainOr } from "@/lib/launchpad/config";
 import { isFilter } from "@/lib/launchpad/search";
 import { clampLimit } from "@/lib/launchpad/paging";
 import { VOLUME_WINDOWS, getLaunchFeed, getLaunchTotals, getTrending, isTrendingSource, listLaunchesPage, parseSort, trendingFrom, type VolumeWindow } from "@/lib/launchpad/queries";
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   const winRaw = u.searchParams.get("window");
   const window = winRaw && VOLUME_WINDOWS.includes(winRaw as VolumeWindow) ? (winRaw as VolumeWindow) : "all";
   const c = u.searchParams.get("chain");
-  const chain = isChainKey(c) ? c : null;
+  const chain = visibleChainOr(c);
   const f = u.searchParams.get("filter");
   const filter = isFilter(f) ? f : null;
   const limit = clampLimit(u.searchParams.get("limit"), 40);

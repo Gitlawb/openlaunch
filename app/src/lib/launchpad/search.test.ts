@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit } from "./search.ts";
+import { compareSearchHit, escapeLike, isAddressQuery, matchesFilter, matchesQuery, normalizeQuery, rankHit, type RankedHit } from "./search.ts";
 
 const row = (o: Partial<Parameters<typeof matchesQuery>[0]> = {}) => ({
   name: "Clear Sky",
@@ -51,4 +51,43 @@ test("rankHit orders symbol exact < symbol prefix < name prefix < substring", ()
   assert.equal(rankHit(row(), "sk"), 1);
   assert.equal(rankHit(row(), "clear"), 2);
   assert.equal(rankHit(row(), "ear"), 3);
+});
+
+test("escapeLike neutralizes LIKE wildcards and the escape char", () => {
+  assert.equal(escapeLike("abc"), "abc");
+  assert.equal(escapeLike("a%b"), "a\\%b");
+  assert.equal(escapeLike("a_b"), "a\\_b");
+  assert.equal(escapeLike("a\\b"), "a\\\\b");
+  assert.equal(escapeLike("%_%"), "\\%\\_\\%");
+});
+
+const hit = (o: Partial<RankedHit> = {}): RankedHit => ({
+  ...row(),
+  chain_id: 8453,
+  block_number: 30_000_000,
+  ...o,
+});
+
+test("compareSearchHit: relevance first, then cross-chain newest-first", () => {
+  const exactLowChain = hit({ symbol: "FOO", chain_id: 7777777, block_number: 5_000, block_time: "2026-09-11T23:59:00.000Z" });
+  const substringHighChain = hit({ symbol: "XFOOX", name: "Xfoox thing", chain_id: 8453, block_number: 30_000_000, block_time: "2026-09-12T00:00:00.000Z" });
+  assert.ok(compareSearchHit(exactLowChain, substringHighChain, "foo") < 0, "exact match on a low-height chain beats a newer substring match");
+  assert.ok(compareSearchHit(substringHighChain, exactLowChain, "foo") > 0);
+});
+
+test("compareSearchHit: same rank orders by block time, not raw block number", () => {
+  const olderHighHeight = hit({ symbol: "FOOA", chain_id: 8453, block_number: 30_000_000, block_time: "2026-09-11T00:00:00.000Z" });
+  const newerLowHeight = hit({ symbol: "FOOB", chain_id: 7777777, block_number: 5_000, block_time: "2026-09-12T00:00:00.000Z" });
+  assert.ok(compareSearchHit(newerLowHeight, olderHighHeight, "foo") < 0, "newer launch wins despite a far lower block number");
+  const sorted = [olderHighHeight, newerLowHeight].sort((a, b) => compareSearchHit(a, b, "foo"));
+  assert.deepEqual(sorted.map((r) => r.symbol), ["FOOB", "FOOA"]);
+});
+
+test("compareSearchHit: rank dominates time; ties break deterministically", () => {
+  const newerSubstring = hit({ symbol: "XFOOX", name: "Xfoox", block_time: "2026-09-12T00:00:00.000Z", block_number: 30_000_001 });
+  const olderPrefix = hit({ symbol: "FOOX", block_time: "2026-09-11T00:00:00.000Z", block_number: 30_000_000 });
+  assert.ok(compareSearchHit(olderPrefix, newerSubstring, "foo") < 0, "prefix beats newer substring");
+  const a = hit({ symbol: "FOO", block_time: "2026-09-12T00:00:00.000Z", chain_id: 8453, block_number: 7 });
+  const b = hit({ symbol: "FOO", block_time: "2026-09-12T00:00:00.000Z", chain_id: 8453, block_number: 7 });
+  assert.equal(compareSearchHit(a, b, "foo"), 0);
 });

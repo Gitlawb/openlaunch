@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { chainKeyOf, chainKeyOr, DEFAULT_CHAIN } from "@/lib/chainPublic";
 import { dbConfigured, maybeDb } from "@/lib/db";
-import { LAUNCHPAD_CONFIGURED, launchpad } from "@/lib/launchpad/config";
+import { LAUNCHPAD_CONFIGURED, launchpad, CONFIGURED_CHAINS } from "@/lib/launchpad/config";
 import { syncLagAlertBlocks } from "@/lib/config";
 import { blockNumber, healthBody, type SyncHealthInput } from "@/lib/health";
 
@@ -35,9 +36,12 @@ export async function GET() {
             select chain_id, cursor_block, head_block, last_run_at, last_error from bb_launch_sync_cursor order by chain_id desc`,
           DB_TIMEOUT_MS,
         );
-        chains = rows
-          .filter((r) => (r.chain_id === 8453 ? launchpad("base").configured : r.chain_id === 4663 ? launchpad("robinhood").configured : false))
-          .map((r) => ({ chain: r.chain_id === 8453 ? "base" : "robinhood", cursor_block: blockNumber(r.cursor_block), head_block: blockNumber(r.head_block), last_run_at: r.last_run_at, last_error: r.last_error }));
+        chains = rows.flatMap((r) => {
+          const chain = chainKeyOf(r.chain_id);
+          return chain && launchpad(chain).configured ? [{ chain, cursor_block: blockNumber(r.cursor_block), head_block: blockNumber(r.head_block), last_run_at: r.last_run_at, last_error: r.last_error }] : [];
+        });
+        // a configured chain with no cursor row has never been indexed (its deploy block is unset, or the loop is off): say so
+        for (const k of CONFIGURED_CHAINS) if (!chains.some((c) => c.chain === k)) chains.push({ chain: k, cursor_block: null, head_block: null, last_run_at: null, last_error: `never indexed: the sync loop has not run for ${k} (LAUNCH_DEPLOY_BLOCK for ${k} unset, or LAUNCH_SYNC_LOOP off)` });
         sync = chains[0] ?? null;
       } catch {
         // pre-migration
@@ -46,7 +50,7 @@ export async function GET() {
       console.error("[health] db probe failed:", err instanceof Error ? err.message : err);
     }
   }
-  const { status, body } = healthBody({ dbConfigured: dbConfigured(), dbOk, chain: Boolean(process.env.BASE_RPC_URL?.trim()), launchpad: LAUNCHPAD_CONFIGURED, sync, chains, lagAlertBlocks: syncLagAlertBlocks() });
+  const { status, body } = healthBody({ dbConfigured: dbConfigured(), dbOk, chain: Boolean(process.env.BASE_RPC_URL?.trim()), launchpad: LAUNCHPAD_CONFIGURED, sync, chains, lagAlertBlocks: (chain) => syncLagAlertBlocks(chainKeyOr(chain, DEFAULT_CHAIN)) });
   const key = body.alerts.join(",");
   if (key !== lastAlertKey) {
     if (key) console.error(`[alert] health ok=false ${key} cursor=${body.sync.cursor_block} head=${body.sync.head_block} last_error=${body.sync.last_error ?? "-"}`);

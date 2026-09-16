@@ -44,3 +44,16 @@ test("only two distinct upstream requests can be in flight", async () => {
   await assert.rejects(get({...pool,poolId:"0x"+"d".repeat(64)}));
   finishFirst("ready");finish("ready"); await Promise.all([first,second]);
 });
+
+test("Arc metadata never inherits a same-address Base or Robinhood listing", async () => {
+  const seen: string[] = [];
+  const get = createGeckoCache(async (identity) => {
+    seen.push(identity.chain);
+    return identity.chain === "arc" ? "unpriced" : "ready";
+  });
+  assert.equal(await get(pool), "ready");
+  assert.equal(await get({ ...pool, chain: "robinhood" }), "ready");
+  assert.equal(await get({ ...pool, chain: "arc" }), "unpriced");
+  assert.equal(await get({ ...pool, chain: "arc" }), "unpriced");
+  assert.deepEqual(seen, ["base", "robinhood", "arc"]);
+});

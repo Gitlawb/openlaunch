@@ -15,8 +15,8 @@ import { toast } from "./TxToasts";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/vendor/tabs";
 import { LAUNCH_LOCKER_ABI, ERC20_MIN_ABI } from "@/lib/launchpad/abi";
 import { launchpad } from "@/lib/launchpad/config";
-import { earnedRaw, feeShareBps, holdingUsd, isBurnOnly } from "@/lib/launchpad/creator";
-import { fmtCompact, fmtQuote, fmtUsd } from "@/lib/launchpad/math";
+import { earnedSides, feeShareBps, feeSidesUsd, hasFees, holdingUsd, isBurnOnly, type FeeSides } from "@/lib/launchpad/creator";
+import { fmtCompact, fmtQuote, fmtTokens, fmtUsd } from "@/lib/launchpad/math";
 import { capDisplay } from "@/lib/launchpad/market-cap";
 import type { LaunchRow, WalletTrade } from "@/lib/launchpad/queries";
 import type { EditFields } from "@/lib/launchpad/editAuth";
@@ -28,7 +28,7 @@ import ConnectWallet from "@/components/ConnectWallet";
 import styles from "./MeDashboard.module.css";
 
 type Me = { wallet: string; ethUsd: number | null; launches: LaunchRow[]; tokens: (LaunchRow & { my_buys: number; my_sells: number; my_last_trade: string })[]; trades: WalletTrade[] };
-type Pending = Record<string, bigint | null>; // key chain:token → uncollected quote (raw), null = unknown
+type Pending = Record<string, FeeSides | null>; // key chain:token → uncollected fees on both sides (raw), null = unknown
 type Balances = Record<string, bigint | null>;
 
 const key = (l: { chain: ChainKey; token: string }) => `${l.chain}:${l.token}`;
@@ -87,13 +87,13 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
         me.launches.map(async (l) => {
           const cfg = launchpad(l.chain);
           if (!cfg.locker || l.lp_fee === 0) {
-            p[key(l)] = 0n;
+            p[key(l)] = { quote: 0n, token: 0n };
             return;
           }
           try {
             const pub = getPublicClient(config, { chainId: CHAINS[l.chain].id })!;
             const { result } = await pub.simulateContract({ address: cfg.locker, abi: LAUNCH_LOCKER_ABI, functionName: "collect", args: [BigInt(l.token_id)], account: address });
-            p[key(l)] = result[0];
+            p[key(l)] = { quote: result[0], token: result[1] };
           } catch {
             p[key(l)] = null;
           }
@@ -146,8 +146,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
   async function collectAll() {
     if (!me) return;
     for (const l of me.launches) {
-      const p = pending[key(l)];
-      if (p && p > 0n) await collect(l);
+      if (hasFees(pending[key(l)])) await collect(l);
     }
   }
 
@@ -170,18 +169,18 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
             <ol className={styles.capabilities}>
               <li><span className={styles.step}>01</span><div><h3><Layers3 size={18} aria-hidden="true" />Manage your launches</h3><p>Open each token, update its description, logo and links. On-chain settings stay fixed.</p></div></li>
               <li><span className={styles.step}>02</span><div><h3><Coins size={18} aria-hidden="true" />See where fees go</h3><p>View your beneficiary share and uncollected fees. Collect to the recipients set at launch.</p></div></li>
-              <li><span className={styles.step}>03</span><div><h3><ArrowDownLeft size={18} aria-hidden="true" />Follow your activity</h3><p>Check token balances and past trades across both chains, with links to the transactions.</p></div></li>
+              <li><span className={styles.step}>03</span><div><h3><ArrowDownLeft size={18} aria-hidden="true" />Follow your activity</h3><p>Check token balances and past trades across every chain, with links to the transactions.</p></div></li>
             </ol>
             <Link href="/#launches" className={styles.browseLink}>Just exploring? Browse launches<ArrowUpRight size={15} aria-hidden="true" /></Link>
           </div>
         </section>
-        <div className={styles.disclosure}><span>One wallet. Both chains.</span><p>This dashboard reads public on-chain activity. There is no separate openlaunch account.</p></div>
+        <div className={styles.disclosure}><span>One wallet. Every chain.</span><p>This dashboard reads public on-chain activity. There is no separate openlaunch account.</p></div>
       </div>
     );
   }
 
-  const collectable = me ? me.launches.filter((l) => (pending[key(l)] ?? 0n) > 0n) : [];
-  const earnedUsd = me ? me.launches.reduce((a, l) => a + (l.quote_usd === null ? 0 : (Number(earnedRaw(l.fees_quote_collected, l.fees_quote_burned, feeShareBps(l.recipients, address))) / 10 ** l.quote_decimals) * l.quote_usd), 0) : 0;
+  const collectable = me ? me.launches.filter((l) => hasFees(pending[key(l)])) : [];
+  const earnedUsd = me ? me.launches.reduce((a, l) => a + (feeSidesUsd(earnedSides(l, feeShareBps(l.recipients, address)), l.quote_decimals, l.price_quote, l.quote_usd) ?? 0), 0) : 0;
   const holdingsUsd = me ? me.tokens.reduce((a, t) => a + (holdingUsd(balances[key(t)] ?? 0n, t.price_quote, t.quote_usd) ?? 0), 0) : 0;
   const holdingsReading = me?.tokens.some((t) => balances[key(t)] === undefined) ?? false;
   const holdingsUnknown = me?.tokens.some((t) => balances[key(t)] === null || (balances[key(t)] !== undefined && holdingUsd(balances[key(t)]!, t.price_quote, t.quote_usd) === null)) ?? false;
@@ -190,7 +189,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
 
   const walletBar = <div className={styles.walletBar}>
     <div className={styles.identity}><span className={styles.walletIcon} aria-hidden="true"><Wallet size={19} /></span><div><p>Connected wallet</p><span className={styles.address} title={address}>{shortAddr(address)}</span></div></div>
-    <div className={styles.walletUtilities}><span className={styles.updateNote}>{refreshing ? "Updating your dashboard" : now ? "Latest loaded snapshot" : "Base + Robinhood Chain"}</span><button type="button" className={styles.refresh} onClick={() => void load()} disabled={refreshing || busy !== null}><RefreshCw size={15} aria-hidden="true" />{refreshing ? "Refreshing…" : "Refresh"}</button></div>
+    <div className={styles.walletUtilities}><span className={styles.updateNote}>{refreshing ? "Updating your dashboard" : now ? "Latest loaded snapshot" : "Base + Robinhood Chain + Arc"}</span><button type="button" className={styles.refresh} onClick={() => void load()} disabled={refreshing || busy !== null}><RefreshCw size={15} aria-hidden="true" />{refreshing ? "Refreshing…" : "Refresh"}</button></div>
   </div>;
 
   if (!me) {
@@ -206,7 +205,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
       {walletBar}
       {err ? <p className={styles.error} role="alert">Refresh failed: {err}. Showing the last loaded data. Try Refresh again.</p> : null}
       <dl className={styles.stats}>
-        <Stat k="Your launches" v={String(me.launches.length)} hint="Across both chains" />
+        <Stat k="Your launches" v={String(me.launches.length)} hint="Across all chains" />
         <Stat k="Fees earned" v={fmtUsd(earnedUsd, { compact: true })} hint="Your share, USD-priced launches" accent="up" />
         <Stat k="Uncollected" v={feesReading ? "Reading…" : feesUnknown ? "—" : String(collectable.length)} hint={feesUnknown ? "Some pools could not be read" : "Pools with fees to collect"} accent={!feesReading && !feesUnknown && collectable.length ? "warm" : undefined} />
         <Stat k="Holdings value" v={holdingsReading ? "Reading…" : holdingsUnknown ? "—" : fmtUsd(holdingsUsd, { compact: true })} hint={holdingsUnknown ? "A balance or price is unavailable" : "Current estimated USD value"} />
@@ -234,7 +233,8 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
         <ul className={styles.tokenList}>
           {me?.launches.map((l) => {
             const share = feeShareBps(l.recipients, address);
-            const earned = earnedRaw(l.fees_quote_collected, l.fees_quote_burned, share);
+            const earned = earnedSides(l, share);
+            const earnedUsdRow = feeSidesUsd(earned, l.quote_decimals, l.price_quote, l.quote_usd);
             const p = pending[key(l)];
             const k = key(l);
             return (
@@ -257,15 +257,17 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
                     </div>
                   </Link>
                   <div className={styles.figure}>
-                    <div className="text-up font-bold">{l.quote_usd !== null ? fmtUsd((Number(earned) / 10 ** l.quote_decimals) * l.quote_usd) : fmtQuote(earned, l.quote_decimals, l.quote_symbol)}</div>
+                    <div className="text-up font-bold" title={`${fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)} + ${fmtTokens(earned.token)} ${l.symbol}`}>{earnedUsdRow !== null ? `${earned.token > 0n ? "≈ " : ""}${fmtUsd(earnedUsdRow)}` : fmtQuote(earned.quote, l.quote_decimals, l.quote_symbol)}</div>
+                    {earnedUsdRow === null && earned.token > 0n ? <div className="text-up font-bold">{fmtTokens(earned.token)} {l.symbol}</div> : null}
                     <div className="text-[11px] text-muted">earned · {share / 100}% share</div>
                   </div>
                   <div className={styles.figure}>
-                    <div className={p && p > 0n ? "text-warm-ink font-bold" : "text-muted"}>{p === undefined ? "…" : p === null ? "—" : fmtQuote(p, l.quote_decimals, l.quote_symbol)}</div>
+                    <div className={hasFees(p) ? "text-warm-ink font-bold" : "text-muted"}>{p === undefined ? "…" : p === null ? "—" : fmtQuote(p.quote, l.quote_decimals, l.quote_symbol)}</div>
+                    {p && p.token > 0n ? <div className="text-warm-ink font-bold">{fmtTokens(p.token)} {l.symbol}</div> : null}
                     <div className="text-[11px] text-muted">uncollected</div>
                   </div>
                   <div className={styles.rowActions}>
-                    <button type="button" onClick={() => void collect(l)} disabled={busy !== null || !p || p === 0n} className={styles.outlineButton} aria-label={`Collect fees for ${l.symbol}`}>
+                    <button type="button" onClick={() => void collect(l)} disabled={busy !== null || !hasFees(p)} className={styles.outlineButton} aria-label={`Collect fees for ${l.symbol}`}>
                       {busy === k ? "Collecting…" : "Collect"}
                     </button>
                     <button type="button" onClick={() => setEditing(l)} className={styles.quietButton} aria-label={`Edit ${l.symbol} details`}>
@@ -321,7 +323,7 @@ function WalletDashboard({ address, isConnected }: { address: Address | undefine
         {me && me.trades.length > 0 ? (
           <div className={`${styles.tradeScroll} bb-scroll`} role="region" aria-label="Your trades table" tabIndex={0}>
             <table className={styles.trades}>
-              <caption className="sr-only">Your latest indexed trades on Base and Robinhood Chain</caption>
+              <caption className="sr-only">Your latest indexed trades on Base, Robinhood Chain and Arc</caption>
               <thead><tr><th scope="col">Side</th><th scope="col">Token / chain</th><th scope="col">Amount</th><th scope="col" className={styles.usdColumn}>USD value</th><th scope="col">Transaction</th></tr></thead>
               <tbody className="font-mono tnum">
                 {me.trades.map((t) => (

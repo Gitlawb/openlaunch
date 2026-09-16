@@ -19,6 +19,10 @@ test("blank iframe can be escaped and loading is not claimed as proof of candles
   assert.match(source,/may reset drawings/);
   assert.match(source,/active = false; clearTimeout\(timeout\); controller.abort\(\)/);
   assert.match(source,/return \(\) => clearTimeout\(timeout\)/);
+  const frame = source.slice(source.indexOf("function ChartFrame("));
+  assert.match(frame, /onLoad=\{\(\) => setState\("loaded"\)\}/);
+  assert.match(frame, /current === "loading" \? "slow" : current/);
+  assert.doesNotMatch(frame, /setLookup|setSource|postMessage|contentDocument|setState\("ready"\)/);
 });
 test("no trades shows no fabricated candles and can discover the first indexed swap",()=>{
   assert.match(native,/!data.baseline.hasPriorTrades && !data.candles.length/);

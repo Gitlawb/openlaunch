@@ -1,0 +1,58 @@
+.section { padding: 20px; min-width: 0; }
+.heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.heading h2 { color: var(--color-ink); font-size: 14px; font-weight: 600; }
+.platform { color: var(--color-up); font-size: 12px; font-weight: 600; }
+.intro { margin-top: 6px; color: var(--color-body); font-size: 13px; line-height: 1.6; }
+.fieldset { min-width: 0; padding: 0; border: 0; }
+.rates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 20px; border-bottom: 1px solid var(--color-line); }
+.rate { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 15px 12px 16px; border-radius: 10px 10px 0 0; color: var(--color-ink); cursor: pointer; transition: background-color 180ms ease-out, color 180ms ease-out; }
+.rate::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 2px; background: transparent; content: ""; transition: background-color 180ms ease-out; }
+.rate:hover { background: var(--color-paper); }
+.rate[data-selected="true"] { color: var(--color-brand); background: var(--color-brand-soft); }
+.rate[data-selected="true"]::after { background: var(--color-brand); }
+.rate input { position: absolute; top: 16px; right: 12px; }
+.rate input, .route input { width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--color-brand); cursor: pointer; }
+.rateValue { font-size: 24px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.rateCaption { color: var(--color-body); font-size: 11px; line-height: 1.5; }
+.rate[data-selected="true"] .rateCaption { color: var(--color-brand); }
+.rate:has(input:focus-visible), .route:has(input:focus-visible) { outline: 2px solid var(--color-brand); outline-offset: 3px; }
+.routing { margin-top: 28px; }
+.routing legend { color: var(--color-ink); font-size: 13px; font-weight: 600; }
+.routeHelp { color: var(--color-body); font-size: 12px; line-height: 1.6; margin-top: 5px; }
+.routes { margin-top: 12px; }
+.route { display: flex; align-items: center; gap: 12px; min-height: 66px; padding: 13px 2px; color: var(--color-muted); border-bottom: 1px solid var(--color-line); cursor: pointer; transition: color 180ms ease-out; }
+.route > svg { flex-shrink: 0; }
+.route:hover, .route[data-selected="true"] { color: var(--color-brand); }
+.routeCopy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.routeTitle { color: var(--color-ink); font-size: 13px; font-weight: 600; }
+.route[data-selected="true"] .routeTitle { color: var(--color-brand); }
+.routeDescription { color: var(--color-body); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.custom { margin-top: 16px; }
+.custom > label { display: block; margin-bottom: 8px; color: var(--color-ink); font-size: 12px; font-weight: 600; }
+.custom input { min-width: 0; }
+.custom input::placeholder { color: var(--color-muted); }
+.custom input[aria-invalid="true"] { border-color: var(--color-down); }
+.error { margin-top: 6px; color: var(--color-down); font-size: 12px; line-height: 1.6; }
+.summary { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--color-line); }
+.summaryTitle { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; }
+.summaryTitle h3 { color: var(--color-ink); font-size: 13px; font-weight: 600; }
+.summaryTitle > span { color: var(--color-muted); font-size: 11px; }
+.breakdown { display: grid; gap: 8px; margin-top: 14px; color: var(--color-body); font-size: 12px; }
+.breakdown > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.breakdown dd { color: var(--color-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.breakdown dd.platform { color: var(--color-up); }
+.destination { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; color: var(--color-muted); font-size: 11px; }
+.destination > span { color: var(--color-body); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.example { margin-top: 14px; color: var(--color-body); font-size: 12px; line-height: 1.7; }
+.example strong { color: var(--color-ink); font-weight: 500; }
+.permanent { display: flex; gap: 8px; align-items: flex-start; margin-top: 20px; color: var(--color-muted); font-size: 11px; line-height: 1.6; }
+.permanent svg { flex-shrink: 0; margin-top: 2px; }
+@media (max-width: 390px) {
+  .rate { padding-right: 8px; padding-left: 8px; }
+  .rate input { right: 8px; top: 14px; width: 13px; height: 13px; }
+  .rateValue { font-size: 22px; }
+  .rateCaption { max-width: 8ch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rate, .rate::after, .route { transition: none; }
+}

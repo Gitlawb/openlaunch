@@ -13,7 +13,7 @@ export default async function FeedPage() {
   const result = await listFeed(100).then((posts) => ({ posts, failed: false })).catch(() => ({ posts: [], failed: true }));
   return (
     <main className={styles.page}>
-      <SectionIntro eyebrow="Community / Posts" title="Behind every token." description="Holders, traders and creators, in their own words. Follow the conversation across Base and Robinhood Chain.">
+      <SectionIntro eyebrow="Community / Posts" title="Behind every token." description="Holders, traders and creators, in their own words. Follow the conversation across Base, Robinhood Chain and Arc.">
         <Link href="/#launches" className={styles.action}>Explore tokens <ArrowUpRight size={16} aria-hidden="true" /></Link>
       </SectionIntro>
       <CommunityFeed initial={result.posts} loadError={result.failed} />
