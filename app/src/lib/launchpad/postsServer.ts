@@ -86,7 +86,7 @@ export async function listFeed(limit = 30, offset = 0): Promise<PostRow[]> {
   const rows = await db<RawPost[]>`
     SELECT p.id, p.chain_id, p.token, p.wallet, p.parent_id, p.body, p.tag, p.created_at, p.reports, p.hidden, l.symbol, l.name
       FROM bb_posts p JOIN bb_launches l ON l.chain_id = p.chain_id AND l.token = p.token
-     WHERE NOT p.hidden AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ${Math.min(100, limit)} OFFSET ${Math.max(0, offset)}`;
+     WHERE NOT p.hidden AND p.parent_id IS NULL ORDER BY p.created_at DESC LIMIT ${Math.min(100, Math.max(1, Math.trunc(limit) || 30))} OFFSET ${Number.isFinite(offset) ? Math.min(100_000, Math.max(0, Math.trunc(offset))) : 0}`;
   return rows.map(shape);
 }
 
@@ -218,7 +218,8 @@ export async function moderate(p: { action: unknown; target: unknown; wallet: st
              ON CONFLICT (chain_id, token) DO UPDATE SET comments_muted = EXCLUDED.comments_muted, updated_at = now()`;
   } else {
     const id = Number(p.target.slice(5));
-    await db`UPDATE bb_posts SET hidden = ${action === "hide"}, hidden_by = ${action === "hide" ? wallet : null} WHERE id = ${id}`;
+    const rows = await db<{ id: number }[]>`UPDATE bb_posts SET hidden = ${action === "hide"}, hidden_by = ${action === "hide" ? wallet : null} WHERE id = ${id} RETURNING id`;
+    if (rows.length === 0) return fail("post not found", 404);
   }
   return { ok: true };
 }
