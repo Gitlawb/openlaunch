@@ -3,7 +3,9 @@ import { cache } from "react";
 import { maybeDb } from "@/lib/db";
 import { CHAIN_KEYS, DEFAULT_CHAIN, chainIdOf, chainKeyOf, type ChainKey } from "@/lib/chainPublic";
 import { quoteInfo as staticQuoteInfo, quoteUsdOf, type Quote, NATIVE_QUOTES, fixedUsdQuotes, quotesWithKey } from "./config";
-import { ensureRegistry, stockByAddress, stockUsdInUse } from "./stocksServer";
+import { ensureRegistry, stockByAddress, stockList, stockUsdInUse } from "./stocksServer";
+import { unlistedQuote, type QuoteTokenMeta } from "./unlisted-quote";
+import { memo } from "./memo";
 import { gitlawbUsd } from "./gitlawbServer";
 import { canonicalImageUrl } from "./images";
 import { GRACE_HOURS, LIVE_WINDOW_HOURS, rankTrending, type LiveTier } from "./ranking";
@@ -27,9 +29,10 @@ export type LaunchRow = {
   token_id: number;
   launcher: string;
   quote: string;
-  quote_key: Quote["key"]; // eth | usdg | gitlawb | stock (= any other ERC20)
+  quote_key: Quote["key"]; // eth | usdg | usdc | gitlawb | stock (a registry stock) | other (an unlisted ERC-20, unlisted-quote.ts)
   quote_symbol: string;
   quote_decimals: number;
+  quote_decimals_known: boolean; // false only for an unlisted quote not read yet: quote_decimals is a placeholder, do not trade
   pool_id: string;
   start_tick: number;
   lp_fee: number;
@@ -78,7 +81,7 @@ export type LaunchRow = {
   volume_24h_usd: number | null;
 };
 
-type Raw = Omit<LaunchRow, "chain" | "quote_key" | "quote_symbol" | "quote_decimals" | "token_id" | "block_number" | "tick" | "trades_1h" | "traders_1h" | "traders_1h_ex" | "trades_24h" | "traders_24h_ex" | "last_outside_trade_at" | "live_tier" | "launcher_collapsed" | "price_quote" | "fdv_quote" | "change_from_launch" | "quote_usd" | "price_usd" | "fdv_usd" | "volume_usd" | "volume_1h_usd" | "volume_24h_usd"> & {
+type Raw = Omit<LaunchRow, "chain" | "quote_key" | "quote_symbol" | "quote_decimals" | "quote_decimals_known" | "token_id" | "block_number" | "tick" | "trades_1h" | "traders_1h" | "traders_1h_ex" | "trades_24h" | "traders_24h_ex" | "last_outside_trade_at" | "live_tier" | "launcher_collapsed" | "price_quote" | "fdv_quote" | "change_from_launch" | "quote_usd" | "price_usd" | "fdv_usd" | "volume_usd" | "volume_1h_usd" | "volume_24h_usd"> & {
   token_id: bigint;
   block_number: bigint;
   tick: number | null;
@@ -96,16 +99,28 @@ const TIERS: LiveTier[] = ["live", "new", "quiet"]; // index = the live_tier CAS
 
 /** Stock USD prices for this request (filled by `withStocks`). */
 let stockUsdNow = new Map<string, number | null>();
+/** Unlisted quotes' on-chain symbol / decimals (bb_quote_tokens, keyed `${chain_id}:${address}`), and each chain's stock tickers they may not borrow. */
+let quoteTokensNow = new Map<string, QuoteTokenMeta>();
+let stockSymbolsNow = new Map<ChainKey, string[]>();
 /** GITLAWB USD for this request (filled by `withStocks`; null = unknown → no USD, 0 weight in USD sorts). */
 let gitlawbUsdNow: number | null = null;
 
-/** Server-side quote resolution: static ETH/USDG/GITLAWB (GITLAWB gets the live price), else a registry stock, else unknown. */
+/** Server-side quote resolution: static ETH/USDG/GITLAWB (GITLAWB gets the live price), else a registry stock, else an unlisted quote. */
 function quoteInfo(chain: ChainKey, address: string): Quote {
   const q = staticQuoteInfo(chain, address);
   if (q.key === "gitlawb") return { ...q, usd: gitlawbUsdNow };
-  if (q.symbol !== "?") return q;
+  if (q.key !== "other") return q;
   const st = stockByAddress(chain, address);
-  return st ? { key: "stock", address: st.address as Quote["address"], symbol: st.symbol, decimals: st.decimals, usd: stockUsdNow.get(st.address) ?? null, name: st.name, logo: st.logo } : q;
+  if (st) return { key: "stock", address: st.address as Quote["address"], symbol: st.symbol, decimals: st.decimals, usd: stockUsdNow.get(st.address) ?? null, name: st.name, logo: st.logo };
+  return unlistedQuote(address, quoteTokensNow.get(`${chainIdOf(chain)}:${address.toLowerCase()}`) ?? null, stockSymbolsNow.get(chain) ?? []);
+}
+
+/** bb_quote_tokens is tiny (one row per unlisted quote) and changes only when the indexer reads a new one. */
+async function loadQuoteTokens(): Promise<Map<string, QuoteTokenMeta>> {
+  const db = maybeDb();
+  if (!db) return new Map();
+  const rows = await db<{ chain_id: number; address: string; symbol: string | null; name: string | null; decimals: number | null }[]>`SELECT chain_id, address, symbol, name, decimals FROM bb_quote_tokens`;
+  return new Map(rows.map((r) => [`${r.chain_id}:${r.address}`, { symbol: r.symbol, name: r.name, decimals: r.decimals }]));
 }
 
 /** Warm the stock registry + prices for the stocks in use (and the GITLAWB price), so `shape()` can stay synchronous. */
@@ -116,6 +131,12 @@ async function withStocks(): Promise<void> {
     stockUsdNow = await stockUsdInUse();
   } catch {
     /* fail soft: stocks show without USD */
+  }
+  stockSymbolsNow = new Map(CHAIN_KEYS.map((k) => [k, stockList(k).map((s) => s.symbol)]));
+  try {
+    quoteTokensNow = await memo("quote-tokens", 30_000, loadQuoteTokens);
+  } catch {
+    /* fail soft (table not migrated yet, db blip): unlisted quotes show by address and do not trade */
   }
 }
 
@@ -142,6 +163,7 @@ function shape(raw: Raw & { last_swap_block?: bigint; last_swap_log?: number; lo
     quote_key: q.key,
     quote_symbol: q.symbol,
     quote_decimals: q.decimals,
+    quote_decimals_known: q.decimalsKnown !== false,
     token_id: Number(r.token_id),
     block_number: Number(r.block_number),
     tick,
@@ -428,8 +450,8 @@ export async function getLaunchTotals(ethUsd: number | null = null): Promise<Lau
     const usd = quoteUsd(q, ethUsd);
     const qu = usd ?? 0;
     // a quote that normally prices (ETH, GITLAWB, a registry stock) but has no price this instant → the USD sums undercount;
-    // an ERC-20 no registry knows (symbol "?") is unpriced by design and is left out of the USD figures silently, as always
-    if (usd === null && q.symbol !== "?" && (BigInt(r.volume) > 0n || BigInt(r.burned) > 0n || BigInt(r.creators) > 0n)) t.usd_partial = true;
+    // an unlisted ERC-20 (key "other") is unpriced by design and is left out of the USD figures silently, as always
+    if (usd === null && q.key !== "other" && (BigInt(r.volume) > 0n || BigInt(r.burned) > 0n || BigInt(r.creators) > 0n)) t.usd_partial = true;
     t.launches += Number(r.launches);
     t.trades += Number(r.trades);
     t.volume_usd += units(r.volume, q.decimals) * qu;
@@ -597,9 +619,12 @@ export type TrendingSnap = { window: "1h" | "24h"; items: LaunchRow[] };
 
 export const TRENDING_CANDIDATES = 40;
 
-/** "Hot right now" from rows already fetched: the first page of the live sort (all chains, no filter) is the candidate set. */
+/**
+ * "Hot right now" from rows already fetched: the first page of the live sort (all chains, no filter) is the candidate set.
+ * Unlisted pairs stay in the lists (with their badge) but are never promoted here.
+ */
 export function trendingFrom(rows: LaunchRow[]): TrendingSnap {
-  return rankTrending(rows, Date.now());
+  return rankTrending(rows.filter((r) => r.quote_key !== "other"), Date.now());
 }
 
 /** True when a list request's first page doubles as the trending candidate set, so callers can skip `getTrending`. */
