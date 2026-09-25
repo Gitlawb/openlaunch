@@ -61,10 +61,19 @@ test("ambiguous separators are rejected, never rewritten into a different valid 
   assert.equal(sanitizeDecimalInput("1.000,50"), "");
   assert.equal(sanitizeDecimalInput("1,0000"), "", "grouping is exactly three digits");
   assert.equal(sanitizeDecimalInput("12,"), "", "a trailing comma is not grouping either");
+  // well-formed grouping only: a 1-3 digit lead (not 0), then groups of exactly three, none after the dot
+  assert.equal(sanitizeDecimalInput("0,123"), "", "a decimal comma with three decimals, not 123 (1,000x)");
+  assert.equal(sanitizeDecimalInput("1234,567"), "", "a four-digit lead is not grouping");
+  assert.equal(sanitizeDecimalInput("01,234"), "");
+  assert.equal(sanitizeDecimalInput(",500"), "");
+  assert.equal(sanitizeDecimalInput("1,234.567,000"), "", "no comma after the decimal point");
+  assert.equal(sanitizeDecimalInput("1,23,456"), "", "every group after the lead is exactly three digits");
   // real grouping still reads
   assert.equal(sanitizeDecimalInput("12,000"), "12000");
   assert.equal(sanitizeDecimalInput("1,234,567"), "1234567");
   assert.equal(sanitizeDecimalInput("$1,234.50 USD"), "1234.50");
+  assert.equal(sanitizeDecimalInput("999,999.99"), "999999.99");
+  assert.equal(sanitizeDecimalInput("100000"), "100000", "ungrouped numbers are untouched");
 });
 
 test("the launch form's rejected entries stay visible states, not a different cap or buy", () => {
