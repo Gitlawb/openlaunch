@@ -7,6 +7,8 @@ import { ensureRegistry, stockByAddress, stockList, stockUsdInUse } from "./stoc
 import { unlistedQuote, type QuoteTokenMeta } from "./unlisted-quote";
 import { memo } from "./memo";
 import { gitlawbUsd } from "./gitlawbServer";
+import { GITLAWB_ADDRESS, reconcileGitlawbUsd } from "./gitlawb";
+import { MUSEWORLD_ADDRESS, MUSEWORLD_TWAP_WINDOW_S, timeWeightedPrice } from "./museworld";
 import { canonicalImageUrl } from "./images";
 import { GRACE_HOURS, LIVE_WINDOW_HOURS, rankTrending, type LiveTier } from "./ranking";
 import { SNIPER_BLOCKS } from "./holders";
@@ -102,6 +104,8 @@ let stockUsdNow = new Map<string, number | null>();
 /** Unlisted quotes' on-chain symbol / decimals (bb_quote_tokens, keyed `${chain_id}:${address}`), and each chain's stock tickers they may not borrow. */
 let quoteTokensNow = new Map<string, QuoteTokenMeta>();
 let stockSymbolsNow = new Map<ChainKey, string[]>();
+/** MUSEWORLD USD for this request (filled by `withStocks` from its own GITLAWB pool; null = unknown → no USD, 0 weight in USD sorts). */
+let museworldUsdNow: number | null = null;
 /** GITLAWB USD for this request (filled by `withStocks`; null = unknown → no USD, 0 weight in USD sorts). */
 let gitlawbUsdNow: number | null = null;
 
@@ -109,10 +113,44 @@ let gitlawbUsdNow: number | null = null;
 function quoteInfo(chain: ChainKey, address: string): Quote {
   const q = staticQuoteInfo(chain, address);
   if (q.key === "gitlawb") return { ...q, usd: gitlawbUsdNow };
+  if (q.key === "museworld") return { ...q, usd: museworldUsdNow };
   if (q.key !== "other") return q;
   const st = stockByAddress(chain, address);
   if (st) return { key: "stock", address: st.address as Quote["address"], symbol: st.symbol, decimals: st.decimals, usd: stockUsdNow.get(st.address) ?? null, name: st.name, logo: st.logo };
   return unlistedQuote(address, quoteTokensNow.get(`${chainIdOf(chain)}:${address.toLowerCase()}`) ?? null, stockSymbolsNow.get(chain) ?? []);
+}
+
+/**
+ * USD per MUSEWORLD (museworld.ts): GITLAWB per MUSEWORLD in its own openlaunch pool, times GITLAWB's USD price. The pool
+ * leg comes from our index: the spot (bb_launches) unless it strays >25% from the 30-minute time-weighted price of the
+ * swaps, then that average, the same rule as GITLAWB's own price. null when GITLAWB has no price, the launch row is not
+ * indexed, or it is not the GITLAWB pool it should be.
+ */
+async function readMuseworldUsd(gitlawbUsd: number | null): Promise<number | null> {
+  const db = maybeDb();
+  if (!db || gitlawbUsd === null || !(gitlawbUsd > 0)) return null;
+  const cid = chainIdOf("base");
+  const token = MUSEWORLD_ADDRESS.toLowerCase();
+  const now = Math.floor(Date.now() / 1000);
+  const from = now - MUSEWORLD_TWAP_WINDOW_S;
+  const [launch, before, recent] = await Promise.all([
+    db<{ quote: string; sqrt_price_x96: string | null }[]>`SELECT quote, sqrt_price_x96 FROM bb_launches WHERE chain_id = ${cid} AND token = ${token}`,
+    db<{ sqrt_price_x96: string }[]>`
+      SELECT sqrt_price_x96 FROM bb_launch_swaps WHERE chain_id = ${cid} AND token = ${token} AND block_time < to_timestamp(${from})
+       ORDER BY block_number DESC, log_index DESC LIMIT 1`,
+    db<{ t: number; sqrt_price_x96: string }[]>`
+      SELECT extract(epoch FROM block_time)::int AS t, sqrt_price_x96 FROM bb_launch_swaps
+       WHERE chain_id = ${cid} AND token = ${token} AND block_time >= to_timestamp(${from})
+       ORDER BY block_number, log_index LIMIT 5000`,
+  ]);
+  const row = launch[0];
+  if (!row?.sqrt_price_x96 || row.quote !== GITLAWB_ADDRESS.toLowerCase()) return null;
+  const spot = quotePerToken(BigInt(row.sqrt_price_x96), 18); // GITLAWB per MUSEWORLD
+  const baseline = before[0] ? quotePerToken(BigInt(before[0].sqrt_price_x96), 18) : null;
+  const twap = timeWeightedPrice(recent.map((r) => ({ t: Number(r.t), price: quotePerToken(BigInt(r.sqrt_price_x96), 18) })), baseline, from, now);
+  const { usd: perMuseworld, source, deviation } = reconcileGitlawbUsd(spot > 0 ? spot : null, twap);
+  if (source === "twap" && deviation !== null) console.warn(`[museworld] pool spot is ${Math.round(deviation * 100)}% off the 30m average; publishing the average`);
+  return perMuseworld === null ? null : perMuseworld * gitlawbUsd;
 }
 
 /** bb_quote_tokens is tiny (one row per unlisted quote) and changes only when the indexer reads a new one. */
@@ -131,6 +169,12 @@ async function withStocks(): Promise<void> {
     stockUsdNow = await stockUsdInUse();
   } catch {
     /* fail soft: stocks show without USD */
+  }
+  try {
+    museworldUsdNow = await memo("museworld-usd", 15_000, () => readMuseworldUsd(gitlawbUsdNow));
+  } catch (err) {
+    museworldUsdNow = null; // fail soft: MUSEWORLD pools show without USD
+    console.warn("[museworld] price read failed:", err instanceof Error ? err.message : err);
   }
   stockSymbolsNow = new Map(CHAIN_KEYS.map((k) => [k, stockList(k).map((s) => s.symbol)]));
   try {
@@ -275,12 +319,13 @@ export async function listLaunchesPage(opts: ListOpts = {}): Promise<ListPage> {
   const stockArms = stockEntries.flatMap(([a, v]) => stockChains(a).map((k) => db`WHEN (l.chain_id = ${chainIdOf(k)} AND l.quote = ${a}) THEN ${v}::double precision`));
   const stockCase = stockArms.length ? stockArms.reduce((acc, c) => db`${acc} ${c}`) : db``;
   const gitlawbFactor = gitlawbUsdNow !== null && gitlawbUsdNow > 0 ? gitlawbUsdNow : 0; // unknown → 0 weight, like an unknown stock
+  const museworldFactor = museworldUsdNow !== null && museworldUsdNow > 0 ? museworldUsdNow : 0;
   const stables = fixedUsdQuotes();
   const stableCase = stables.length ? stables.map((s) => db`WHEN (l.chain_id = ${chainIdOf(s.chain)} AND l.quote = ${s.address}) THEN ${s.usd}::double precision`).reduce((acc, c) => db`${acc} ${c}`) : db``;
   // address(0) is ETH only where the chain's native asset is ETH; a native stable (Arc: USDC) is already in stableCase above
   const ethNativeArms = CHAIN_KEYS.filter((k) => NATIVE_QUOTES[k].key === "eth").map((k) => db`WHEN (l.chain_id = ${chainIdOf(k)} AND l.quote = ${NATIVE_ADDR}) THEN ${ethFactor}::double precision`);
   const ethNativeCase = ethNativeArms.length ? ethNativeArms.reduce((acc, c) => db`${acc} ${c}`) : db``;
-  const usdPerUnit = db`(CASE ${stableCase} ${stockCase} WHEN ${isGitlawb()} THEN ${gitlawbFactor}::double precision ${ethNativeCase} ELSE 0.0 END)`;
+  const usdPerUnit = db`(CASE ${stableCase} ${stockCase} WHEN ${isGitlawb()} THEN ${gitlawbFactor}::double precision WHEN ${quoteArms("museworld")} THEN ${museworldFactor}::double precision ${ethNativeCase} ELSE 0.0 END)`;
   const stockDecArms = stockEntries.flatMap(([a]) => stockChains(a).flatMap((k) => { const d = stockByAddress(k, a)!.decimals; return d !== 18 ? [db`WHEN (l.chain_id = ${chainIdOf(k)} AND l.quote = ${a}) THEN ${d}`] : []; }));
   const decCase = stockDecArms.length ? stockDecArms.reduce((acc, c) => db`${acc} ${c}`) : db``;
   const stableDec = stables.filter((s) => s.decimals !== 18);

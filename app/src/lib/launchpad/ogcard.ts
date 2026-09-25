@@ -2,7 +2,7 @@
 import { CHAIN_LABELS, type ChainKey } from "../chainKeys.ts";
 
 export type CardInput = { name: string; symbol: string; chain: ChainKey; fdv_usd: number | null; fdv_quote: number; quote_key: string; quote_symbol: string; change_from_launch: number; lp_fee: number; recipients: { payout: string; bps: number }[]; block_time: string };
-export type Card = { title: string; symbol: string; chainLabel: string; mcap: string; change: string; up: boolean | null; fee: string; age: string; quote: { symbol: string; ticker: string; kind: "stock" | "gitlawb" } | null };
+export type Card = { title: string; symbol: string; chainLabel: string; mcap: string; change: string; up: boolean | null; fee: string; age: string; quote: { symbol: string; ticker: string; kind: "stock" | "gitlawb" | "museworld" } | null };
 
 const DEAD = "0x000000000000000000000000000000000000dead";
 
@@ -49,9 +49,10 @@ export function shapeCard(l: CardInput, now: number): Card {
   };
 }
 
-/** "priced in" pill: registry stocks get a ticker tile, GITLAWB the Gitlawb tile; ETH / USDG / unknown ("?") get none. */
+/** "priced in" pill: registry stocks get a ticker tile, GITLAWB the Gitlawb tile, MUSEWORLD the blue Museworld pill; ETH / USDG / unlisted get none. */
 export function quotePillOf(quoteKey: string, quoteSymbol: string): Card["quote"] {
   if (quoteKey === "gitlawb") return { symbol: "GITLAWB", ticker: "GL", kind: "gitlawb" };
+  if (quoteKey === "museworld") return { symbol: "MUSEWORLD", ticker: "MW", kind: "museworld" };
   const sym = quoteSymbol.trim();
   if (quoteKey !== "stock" || !sym || sym === "?") return null;
   return { symbol: sym.slice(0, 12), ticker: sym.replace(/c$/, "").toUpperCase().slice(0, 5), kind: "stock" };

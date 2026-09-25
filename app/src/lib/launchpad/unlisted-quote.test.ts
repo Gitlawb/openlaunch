@@ -8,29 +8,30 @@ import { capDisplay } from "./market-cap.ts";
 import { fdvQuote } from "./math.ts";
 
 /**
- * The factory takes any ERC-20 as the quote (2026-09-25: SHEAF on Base, paired with MUSEWORLD). Such a pair is shown
+ * The factory takes any ERC-20 as the quote (first seen 2026-09-25: SHEAF on Base). Such a pair is shown
  * as unlisted: the token's own symbol when it is safe to show, its real decimals, never a USD price, never trending.
  */
-const MUSEWORLD = "0x882c8e35504d58979b1280fe76d6553f717029f8";
+/** Any ERC-20 no list knows (UNLISTED, the first one seen, is an official quote since; see museworld.test.ts). */
+const UNLISTED = "0x1234567890abcdef1234567890abcdef12345678";
 const src = (rel: string) => readFileSync(path.join(import.meta.dirname, rel), "utf8");
 
 test("an address no list knows is an unlisted quote: key other, labelled by address, never priced", () => {
-  const q = quoteInfo("base", MUSEWORLD);
+  const q = quoteInfo("base", UNLISTED);
   assert.equal(q.key, "other");
-  assert.equal(q.symbol, "0x882c…29f8");
+  assert.equal(q.symbol, "0x1234…5678");
   assert.equal(q.decimalsKnown, false, "not read yet: 18 is a placeholder");
   assert.equal(quoteUsdOf(q, 4_000), null, "never priced, above all never at the ETH price");
-  assert.ok(!listedQuoteAddresses("base").includes(MUSEWORLD));
+  assert.ok(!listedQuoteAddresses("base").includes(UNLISTED));
   assert.ok(listedQuoteAddresses("base").includes(NATIVE), "the native asset is listed, so the indexer never reads address(0)");
 });
 
 test("the on-chain symbol and decimals are used once read", () => {
-  const q = unlistedQuote(MUSEWORLD, { symbol: "MUSEWORLD", name: "MUSWORLD", decimals: 18 });
-  assert.deepEqual([q.key, q.symbol, q.decimals, q.decimalsKnown, q.usd], ["other", "MUSEWORLD", 18, true, null]);
+  const q = unlistedQuote(UNLISTED, { symbol: "PEPE", name: "Pepe", decimals: 18 });
+  assert.deepEqual([q.key, q.symbol, q.decimals, q.decimalsKnown, q.usd], ["other", "PEPE", 18, true, null]);
 });
 
 test("a 6-decimal unlisted quote prices with 6 decimals, not the 18 placeholder (10^12 apart)", () => {
-  const q = unlistedQuote(MUSEWORLD, { symbol: "MEME", name: null, decimals: 6 });
+  const q = unlistedQuote(UNLISTED, { symbol: "MEME", name: null, decimals: 6 });
   assert.equal(q.decimals, 6);
   // 1 MEME per token: sqrtPriceX96 for price (currency1 per currency0 raw) = 1e18 / 1e6 = 1e12 → sqrt = 1e6 · 2^96
   const sqrt = 10n ** 6n * 2n ** 96n;
@@ -42,7 +43,7 @@ test("a 6-decimal unlisted quote prices with 6 decimals, not the 18 placeholder 
 test("unreadable or absurd decimals stay unknown", () => {
   for (const d of [null, -1, 1.5, MAX_QUOTE_DECIMALS + 1, 255, Number.NaN]) {
     assert.equal(validDecimals(d), false, String(d));
-    assert.equal(unlistedQuote(MUSEWORLD, { symbol: "X", name: null, decimals: d as number | null }).decimalsKnown, false, String(d));
+    assert.equal(unlistedQuote(UNLISTED, { symbol: "X", name: null, decimals: d as number | null }).decimalsKnown, false, String(d));
   }
   for (const d of [0, 6, 8, 18, MAX_QUOTE_DECIMALS]) assert.equal(validDecimals(d), true, String(d));
 });
@@ -50,7 +51,7 @@ test("unreadable or absurd decimals stay unknown", () => {
 test("a symbol that is, or dresses up as, a listed asset is replaced by the address", () => {
   for (const fake of ["USDC", "usdc", "$ETH", "WETH", "USDC.e", "USD+", "USDbC", "cbBTC", "GITLAWB", "gitlawb2", "Ｕ​ＳＤＣ", " E T H "]) {
     assert.equal(cleanQuoteSymbol(fake), null, fake);
-    assert.equal(unlistedQuote(MUSEWORLD, { symbol: fake, name: null, decimals: 6 }).symbol, addressLabel(MUSEWORLD), fake);
+    assert.equal(unlistedQuote(UNLISTED, { symbol: fake, name: null, decimals: 6 }).symbol, addressLabel(UNLISTED), fake);
   }
   assert.equal(cleanQuoteSymbol("NVDAx", ["NVDAx"]), null, "the chain's stock tickers are reserved too");
 });
@@ -63,7 +64,7 @@ test("look-alike letters from other scripts cannot spell a listed symbol", () =>
 });
 
 test("symbols are cleaned: ASCII word characters only, bounded, no control or markup", () => {
-  assert.equal(cleanQuoteSymbol("MUSEWORLD"), "MUSEWORLD");
+  assert.equal(cleanQuoteSymbol("PEPE"), "PEPE");
   assert.equal(cleanQuoteSymbol("$PEPE"), "PEPE");
   assert.equal(cleanQuoteSymbol("<b>DOGE</b>"), "bDOGEb");
   assert.equal(cleanQuoteSymbol("A\u0000B\nC"), "ABC");
