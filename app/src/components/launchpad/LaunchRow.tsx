@@ -9,6 +9,7 @@ import { CHAIN_SHORT } from "@/lib/chainPublic";
 import { ago } from "@/lib/launchpad/time";
 import ChangeChip from "./ChangeChip";
 import GitlawbBadge, { isGitlawbQuote } from "./GitlawbBadge";
+import UnlistedPairBadge from "./UnlistedPairBadge";
 import { marketUsd } from "@/lib/launchpad/market-format";
 import { capDisplay } from "@/lib/launchpad/market-cap";
 import type { LiveTier } from "@/lib/launchpad/ranking";
@@ -55,6 +56,7 @@ export default function LaunchRow({ l, rank, window = "all", hl = null, now, pop
             <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-sm font-semibold text-ink">{l.name}</span>
               {isGitlawbQuote(l.quote_key) ? <GitlawbBadge /> : null}
+              {l.quote_key === "other" ? <UnlistedPairBadge symbol={l.quote_symbol} className="shrink-0" /> : null}
               {hl?.kind === "new" ? <span className="shrink-0 text-[10px] font-medium text-brand">New</span> : null}
             </div>
             <div className="mt-0.5 truncate text-[11px] text-muted" title={`${l.symbol} · ${CHAIN_SHORT[l.chain]} · paired with ${l.quote_symbol}`}>

@@ -1,5 +1,6 @@
 import { isAddress, type Address } from "viem";
 import { CHAIN_KEYS, SITE_URL, isChainKey, type ChainKey } from "@/lib/chainPublic";
+import { unlistedQuote } from "./unlisted-quote";
 import { GITLAWB_ADDRESS, GITLAWB_ADDRESS_ROBINHOOD, GITLAWB_DECIMALS, GITLAWB_LOGO_PATH, GITLAWB_NAME, GITLAWB_SYMBOL } from "./gitlawb";
 
 /**
@@ -16,7 +17,11 @@ export const BPS = 10_000;
 /** Locker limit on beneficiaries per launch (LaunchLocker.MAX_RECIPIENTS); recipients.test.ts keeps the two in sync. */
 export const MAX_RECIPIENTS = 7;
 
-export type Quote = { key: "eth" | "usdg" | "usdc" | "gitlawb" | "stock"; address: Address; symbol: string; decimals: number; usd: number | null /* fixed USD price (stables); live for stocks + GITLAWB (server-filled) */; name?: string; logo?: string | null };
+/**
+ * key "stock" = a registry stock; "other" = an ERC-20 no list knows (an unlisted pair, unlisted-quote.ts). `decimalsKnown`
+ * is false only for an unlisted quote whose decimals have not been read yet: its 18 is a placeholder and it must not trade.
+ */
+export type Quote = { key: "eth" | "usdg" | "usdc" | "gitlawb" | "stock" | "other"; address: Address; symbol: string; decimals: number; usd: number | null /* fixed USD price (stables); live for stocks + GITLAWB (server-filled) */; name?: string; logo?: string | null; decimalsKnown?: boolean };
 export type V4 = { poolManager: Address; positionManager: Address; stateView: Address; quoter: Address; universalRouter: Address; permit2: Address; swapLayout: "v1" | "v2" };
 export type ChainLaunchpad = { key: ChainKey; factory: Address | null; locker: Address | null; v4: V4; quotes: Quote[]; configured: boolean };
 
@@ -79,6 +84,10 @@ export function fixedUsdQuotes(): { chain: ChainKey; key: Quote["key"]; address:
 /** Where a quote key is found: (chain, address) pairs, so a filter never matches a same-address token on another chain. */
 export function quotesWithKey(key: Quote["key"]): { chain: ChainKey; address: string }[] {
   return CHAIN_KEYS.flatMap((chain) => allQuotes(chain).flatMap((q) => (q.key === key ? [{ chain, address: q.address.toLowerCase() }] : [])));
+}
+/** Lowercase addresses of every quote a chain lists (offered + native); anything else is unlisted, or a registry stock. */
+export function listedQuoteAddresses(chain: ChainKey): string[] {
+  return allQuotes(chain).map((q) => q.address.toLowerCase());
 }
 /** The chain's offered quotes plus its native asset (already among them where the form offers it). */
 function allQuotes(chain: ChainKey): Quote[] {
@@ -169,16 +178,17 @@ export function visibleChainOr(v: unknown): ChainKey | null {
 }
 
 /**
- * Quote metadata for an on-chain quote address. Unknown ERC20 → generic 18-dec, symbol "?", NEVER priced
- * (key "stock" = "some ERC20": Permit2 path, no USD). It must not fall back to "eth": an unknown quote
- * priced at ETH once inflated site volume ~2× (NVDA-quoted launches before the stock registry shipped).
+ * Quote metadata for an on-chain quote address. Unknown ERC20 → an unlisted quote (key "other", labelled by its
+ * address, placeholder 18 decimals, NEVER priced); the server upgrades it to a registry stock or to the token's own
+ * symbol and decimals (queries.ts). It must not fall back to "eth": an unknown quote priced at ETH once inflated site
+ * volume ~2× (NVDA-quoted launches before the stock registry shipped).
  */
 export function quoteInfo(key: ChainKey, address: string): Quote {
   const a = address.toLowerCase();
-  return allQuotes(key).find((q) => q.address.toLowerCase() === a) ?? { key: "stock", address: address as Address, symbol: "?", decimals: 18, usd: null };
+  return allQuotes(key).find((q) => q.address.toLowerCase() === a) ?? unlistedQuote(address, null);
 }
 
-/** Quote key for a stored quote address: a fixed quote's key, else "stock" (= some ERC20, priced only if a registry knows it). */
+/** Quote key for a stored quote address: a fixed quote's key, else "other" (the server may still find it in a stock registry). */
 export function quoteKeyOf(key: ChainKey, address: string): Quote["key"] {
   return quoteInfo(key, address).key;
 }
@@ -193,9 +203,9 @@ export const FEE_PRESETS = [
 ] as const;
 
 /** Starting market cap presets per quote (fully diluted, in quote units). */
-export const MCAP_PRESETS: Record<Quote["key"], number[]> = { eth: [1, 5, 10, 25], usdg: [5_000, 10_000, 25_000, 100_000], usdc: [5_000, 10_000, 25_000, 100_000], gitlawb: [] /* derived from the live price */, stock: [] /* derived from the live price */ };
+export const MCAP_PRESETS: Record<Quote["key"], number[]> = { eth: [1, 5, 10, 25], usdg: [5_000, 10_000, 25_000, 100_000], usdc: [5_000, 10_000, 25_000, 100_000], gitlawb: [] /* derived from the live price */, stock: [] /* derived from the live price */, other: [] /* never offered */ };
 /** Buy amount presets per quote. */
-export const BUY_PRESETS: Record<Quote["key"], string[]> = { eth: ["0.01", "0.05", "0.1", "0.5"], usdg: ["5", "25", "100", "500"], usdc: ["5", "25", "100", "500"], gitlawb: ["100000", "500000", "1000000", "5000000"], stock: ["0.1", "0.5", "1", "5"] };
+export const BUY_PRESETS: Record<Quote["key"], string[]> = { eth: ["0.01", "0.05", "0.1", "0.5"], usdg: ["5", "25", "100", "500"], usdc: ["5", "25", "100", "500"], gitlawb: ["100000", "500000", "1000000", "5000000"], stock: ["0.1", "0.5", "1", "5"], other: [] /* unknown token, unknown scale */ };
 
 // NEXT_PUBLIC_* must be read as literal `process.env.X` expressions: Next inlines them at build time.
 const DEV_RPC: Record<ChainKey, string | undefined> = {

@@ -15,7 +15,7 @@ import { gasReserveInQuote } from "@/lib/launchpad/first-buy";
 import { fmtCompact, fmtQuoteUnits, fmtUsd, minOut, units, pipsToPct } from "@/lib/launchpad/math";
 import { sanitizeDecimalInput } from "@/lib/launchpad/decimal-input";
 import { encodeV4ExactInSingle, type PoolKey } from "@/lib/launchpad/swap";
-import { CHAINS, CHAIN_LABELS, BUILDER_DATA_SUFFIX, explorerTx, type ChainKey } from "@/lib/chainPublic";
+import { CHAINS, CHAIN_LABELS, BUILDER_DATA_SUFFIX, explorerAddress, explorerTx, shortAddr, type ChainKey } from "@/lib/chainPublic";
 import { tradeQuoteKey } from "@/lib/launchpad/token-market";
 import { SLIPPAGE_PRESETS_BPS, formatSlippageBps, getSlippageBps, getSlippageBpsServer, parseSlippageField, setSlippageBps, subscribeSlippage } from "@/lib/launchpad/trade-slippage";
 import { friendlyError } from "@/lib/errors";
@@ -47,6 +47,10 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   const CHAIN_LABEL = CHAIN_LABELS[chain];
   const V4 = launchpad(chain).v4;
   const configured = launchpad(chain).configured;
+  // An unlisted quote (any ERC-20 the factory was handed) trades like any ERC-20 quote, once its decimals are known:
+  // until then every amount would be scaled wrong, so the panel shows but does not send.
+  const unlisted = quote.key === "other";
+  const tradable = quote.decimalsKnown !== false;
   const isNative = quote.address.toLowerCase() === NATIVE; // the native asset, whatever the chain calls it (ETH, or USDC on Arc)
   // A buy paid from the gas balance (the native asset, or on Arc the USDC quote that is its ERC-20 face) keeps the swap's gas back,
   // in the quote's own units; a buy paid in any other ERC-20 does not touch the gas balance
@@ -117,7 +121,7 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
   }, [amountIn, side, poolKey, config, amount, V4.quoter, CHAIN.id, quoteKey]);
 
   async function trade() {
-    if (!address || amountIn === null || !quote_ || quote_.forKey !== quoteKey || busy || insufficient || transactionLock.current) return;
+    if (!tradable || !address || amountIn === null || !quote_ || quote_.forKey !== quoteKey || busy || insufficient || transactionLock.current) return;
     // Lock before the first await, including wallet lookup and RPC preflight.
     transactionLock.current = true;
     setPhase({ k: "preparing" });
@@ -204,6 +208,12 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
         {(["buy", "sell"] as Side[]).map((s) => <ToggleGroupItem key={s} value={s} disabled={busy} className={`min-h-10 text-sm ${s === "buy" ? "data-pressed:text-up" : "data-pressed:text-down-ink"}`}>{s === "buy" ? "Buy" : "Sell"}</ToggleGroupItem>)}
       </ToggleGroup>
 
+      {unlisted ? (
+        <p role="note" className="rounded-xl border border-warm/30 bg-warm-soft px-3 py-2 text-[11px] leading-relaxed text-warm-ink text-pretty">
+          <b>Unlisted pair.</b> Priced in {quote.symbol} (<a href={explorerAddress(chain, quote.address)} target="_blank" rel="noreferrer" className="font-mono underline underline-offset-2">{shortAddr(quote.address)} ↗</a>), a token openlaunch does not list. Anyone can deploy a token with any name, so check that address before you trade. No USD price is shown.
+        </p>
+      ) : null}
+
       <div className="relative">
         <div className="rounded-xl border border-line bg-card px-4 pt-3 pb-4">
           <div className="flex items-center justify-between gap-2 text-[11px] text-muted"><label htmlFor={`amount-${chain}-${token}`}>{side === "buy" ? "You pay" : "You sell"}</label>
@@ -271,9 +281,9 @@ export default function TradePanel({ chain, token, symbol, poolKey, quote, ethUs
         {slippageError ? <p id={`slippage-err-${chain}`} role="alert" className="text-right text-[10px] text-down-ink">Use 0.1–20%.</p> : null}
       </dl>
 
-      {!configured ? (
+      {!configured || !tradable ? (
         <button type="button" disabled className={`${btn.secondary} !border-ink !bg-ink !text-inverse w-full min-h-12`}>
-          Trading unavailable
+          {configured ? "Checking the pair token…" : "Trading unavailable"}
         </button>
       ) : !isConnected ? (
         <ConnectWallet className={`${btn.secondary} !border-ink !bg-ink !text-inverse w-full min-h-12`}>
