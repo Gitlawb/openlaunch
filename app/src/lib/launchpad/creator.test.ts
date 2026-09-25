@@ -101,7 +101,7 @@ test("share card shaping", () => {
   assert.equal(feeLabel(0, []), "0% fee");
   assert.equal(feeLabel(30000, [{ payout: "0x1", bps: 10000 }]), "3% fee → beneficiary");
   assert.equal(feeLabel(10000, [{ payout: "0x1", bps: 6000 }, { payout: "0x2", bps: 4000 }]), "1% fee → beneficiaries");
-  assert.equal(ageLabel("2026-09-06T11:59:30Z", now), "1m old");
+  assert.equal(ageLabel("2026-09-06T11:59:30Z", now), "30s old");
   assert.equal(shapeCard({ name: "X", symbol: "X", chain: "base", fdv_usd: null, fdv_quote: 2.5, quote_key: "eth", quote_symbol: "ETH", change_from_launch: -0.5, lp_fee: 0, recipients: [], block_time: "2026-09-01T00:00:00Z" }, now).mcap, "2.50 ETH");
 });
 

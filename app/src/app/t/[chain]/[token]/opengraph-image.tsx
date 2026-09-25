@@ -112,7 +112,7 @@ export default async function TokenOg({ params }: { params: Promise<{ chain: str
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 18, marginTop: 18 }}>
                 <span style={{ fontFamily: "Unbounded, Inter, sans-serif", fontWeight: 700, fontSize: 64, letterSpacing: -2 }}>{card.mcap}</span>
-                <span style={{ fontFamily: "Space Mono, monospace", fontSize: 32, fontWeight: 700, color: card.up ? UP : DOWN }}>{card.change}</span>
+                <span style={{ fontFamily: "Space Mono, monospace", fontSize: 32, fontWeight: 700, color: card.up === null ? MUTED : card.up ? UP : DOWN }}>{card.change}</span>
                 <span style={{ fontSize: 22, color: MUTED }}>market cap · since launch</span>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 26 }}>
